@@ -11,6 +11,7 @@ import (
 	mf "github.com/jcrossley3/manifestival"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +30,7 @@ const (
 
 var (
 	extension = common.Extension{
-		Transformers: []mf.Transformer{ingress, egress, deploymentController},
+		Transformers: []mf.Transformer{ingress, egress, deploymentController, addUserToSCC},
 		PreInstalls:  []common.Extender{ensureMaistra, caBundleConfigMap},
 		PostInstalls: []common.Extender{ensureOpenshiftIngress},
 	}
@@ -237,6 +238,25 @@ func deploymentController(u *unstructured.Unstructured) error {
 		if err := scheme.Convert(deploy, u, nil); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func addUserToSCC(u *unstructured.Unstructured) error {
+	if u.GetKind() == "ClusterRole" && u.GetName() == "knative-serving-core" {
+		role := &rbacv1.ClusterRole{}
+		if err := scheme.Convert(u, role, nil); err != nil {
+			return err
+		}
+		rule := rbacv1.PolicyRule{
+			Verbs:         []string{"*"},
+			APIGroups:     []string{"security.openshift.io"},
+			Resources:     []string{"securitycontextconstraints"},
+			ResourceNames: []string{"privileged"},
+		}
+		log.Info("Adding RBAC", "rule", rule)
+		role.Rules = append(role.Rules, rule)
+		scheme.Convert(role, u, nil)
 	}
 	return nil
 }
