@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   labels:
     istio-injection: enabled
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: knative-serving
 
 ---
@@ -13,7 +13,7 @@ metadata:
   labels:
     networking.knative.dev/certificate-provider: cert-manager
     serving.knative.dev/controller: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: knative-serving-certmanager
 rules:
 - apiGroups:
@@ -36,7 +36,7 @@ metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
     serving.knative.dev/controller: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: knative-serving-istio
 rules:
 - apiGroups:
@@ -59,7 +59,7 @@ kind: ClusterRole
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: custom-metrics-server-resources
 rules:
 - apiGroups:
@@ -78,7 +78,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: knative-serving-admin
 rules: []
 ---
@@ -87,7 +87,7 @@ kind: ClusterRole
 metadata:
   labels:
     serving.knative.dev/controller: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: knative-serving-core
 rules:
 - apiGroups:
@@ -199,7 +199,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: controller
   namespace: knative-serving
 
@@ -209,7 +209,7 @@ kind: ClusterRoleBinding
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: custom-metrics:system:auth-delegator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -226,7 +226,7 @@ kind: ClusterRoleBinding
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: hpa-controller-custom-metrics
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -242,7 +242,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: knative-serving-controller-admin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -259,7 +259,7 @@ kind: RoleBinding
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: custom-metrics-auth-reader
   namespace: kube-system
 roleRef:
@@ -277,7 +277,7 @@ kind: Gateway
 metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: knative-ingress-gateway
   namespace: knative-serving
 spec:
@@ -305,7 +305,7 @@ kind: Gateway
 metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: cluster-local-gateway
   namespace: knative-serving
 spec:
@@ -325,7 +325,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: certificates.networking.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -357,7 +357,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: clusteringresses.networking.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -387,7 +387,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: configurations.serving.knative.dev
 spec:
   additionalPrinterColumns:
@@ -456,7 +456,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: ingresses.networking.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -488,7 +488,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: podautoscalers.autoscaling.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -520,7 +520,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: revisions.serving.knative.dev
 spec:
   additionalPrinterColumns:
@@ -564,7 +564,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: routes.serving.knative.dev
 spec:
   additionalPrinterColumns:
@@ -605,7 +605,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: services.serving.knative.dev
 spec:
   additionalPrinterColumns:
@@ -653,7 +653,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: serverlessservices.networking.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -694,7 +694,7 @@ kind: Service
 metadata:
   labels:
     app: activator
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: activator-service
   namespace: knative-serving
 spec:
@@ -721,7 +721,7 @@ kind: Service
 metadata:
   labels:
     app: controller
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: controller
   namespace: knative-serving
 spec:
@@ -739,7 +739,7 @@ kind: Service
 metadata:
   labels:
     role: webhook
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: webhook
   namespace: knative-serving
 spec:
@@ -754,18 +754,18 @@ apiVersion: caching.internal.knative.dev/v1alpha1
 kind: Image
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: queue-proxy
   namespace: knative-serving
 spec:
-  image: gcr.io/knative-nightly/github.com/knative/serving/cmd/queue@sha256:4a655c481ab32bc5810c7a601434d8ebad697d44a2c462b6e5f5e116814f2fc0
+  image: gcr.io/knative-releases/github.com/knative/serving/cmd/queue@sha256:e007c0a78c541600466f88954deee65c517246a23345bfba45a7f212d09b8f3b
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: activator
   namespace: knative-serving
 spec:
@@ -781,7 +781,7 @@ spec:
       labels:
         app: activator
         role: activator
-        serving.knative.dev/release: "v20190625-cb5c1810"
+        serving.knative.dev/release: "v0.7.0"
     spec:
       containers:
       - args:
@@ -802,7 +802,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-nightly/github.com/knative/serving/cmd/activator@sha256:6b777984d8c771ae044ec22637620608e5ef971ccc5fd6289d7e0940b7a64ace
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/activator@sha256:57fe5f1a8b1d12f29fe9e3a904b00c7219e5ce5825d94f33339db929e92257db
         livenessProbe:
           httpGet:
             httpHeaders:
@@ -854,7 +854,7 @@ kind: Service
 metadata:
   labels:
     app: autoscaler
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: autoscaler
   namespace: knative-serving
 spec:
@@ -879,7 +879,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: autoscaler
   namespace: knative-serving
 spec:
@@ -894,7 +894,7 @@ spec:
         sidecar.istio.io/inject: "true"
       labels:
         app: autoscaler
-        serving.knative.dev/release: "v20190625-cb5c1810"
+        serving.knative.dev/release: "v0.7.0"
     spec:
       containers:
       - args:
@@ -911,7 +911,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-nightly/github.com/knative/serving/cmd/autoscaler@sha256:af96de453f8fc9c05bba713e2018b622017ac65ccbe1598ec4bc54bf5ca19010
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/autoscaler@sha256:2c2370df2751741348e1cc456f31425cb2455c377ddb45d3f6c17e743fd63d78
         livenessProbe:
           httpGet:
             httpHeaders:
@@ -1047,7 +1047,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-autoscaler
   namespace: knative-serving
 
@@ -1088,7 +1088,7 @@ kind: ConfigMap
 metadata:
   labels:
     networking.knative.dev/certificate-provider: cert-manager
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-certmanager
   namespace: knative-serving
 
@@ -1151,7 +1151,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-defaults
   namespace: knative-serving
 
@@ -1176,11 +1176,11 @@ data:
 
     # List of repositories for which tag to digest resolving should be skipped
     registriesSkippingTagResolving: "ko.local,dev.local"
-  queueSidecarImage: gcr.io/knative-nightly/github.com/knative/serving/cmd/queue@sha256:4a655c481ab32bc5810c7a601434d8ebad697d44a2c462b6e5f5e116814f2fc0
+  queueSidecarImage: gcr.io/knative-releases/github.com/knative/serving/cmd/queue@sha256:e007c0a78c541600466f88954deee65c517246a23345bfba45a7f212d09b8f3b
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-deployment
   namespace: knative-serving
 
@@ -1226,7 +1226,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-domain
   namespace: knative-serving
 
@@ -1265,7 +1265,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-gc
   namespace: knative-serving
 
@@ -1310,7 +1310,7 @@ kind: ConfigMap
 metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-istio
   namespace: knative-serving
 
@@ -1368,7 +1368,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-logging
   namespace: knative-serving
 
@@ -1480,7 +1480,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-network
   namespace: knative-serving
 
@@ -1568,7 +1568,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-observability
   namespace: knative-serving
 
@@ -1606,7 +1606,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: config-tracing
   namespace: knative-serving
 
@@ -1615,7 +1615,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: controller
   namespace: knative-serving
 spec:
@@ -1629,7 +1629,7 @@ spec:
         sidecar.istio.io/inject: "false"
       labels:
         app: controller
-        serving.knative.dev/release: "v20190625-cb5c1810"
+        serving.knative.dev/release: "v0.7.0"
     spec:
       containers:
       - env:
@@ -1643,7 +1643,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-nightly/github.com/knative/serving/cmd/controller@sha256:5b21186887ce1ff90a6accb14d0067aa99be089a36eba1536cd1e1ac2f4917b1
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/controller@sha256:016c95f2d94be89683d1ddb7ea959667fd2d899087a4145a31d26b5d6f0bb38f
         name: controller
         ports:
         - containerPort: 9090
@@ -1672,7 +1672,7 @@ kind: APIService
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: v1beta1.custom.metrics.k8s.io
 spec:
   group: custom.metrics.k8s.io
@@ -1690,7 +1690,7 @@ kind: Deployment
 metadata:
   labels:
     networking.knative.dev/certificate-provider: cert-manager
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: networking-certmanager
   namespace: knative-serving
 spec:
@@ -1717,7 +1717,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-nightly/github.com/knative/serving/cmd/networking/certmanager@sha256:363b4eb10e0668a6a7a0f02c6bce9ad1b1a4afa05333d54484e4bc8ede204506
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/networking/certmanager@sha256:c757629165393f778d5c0e8b611c9c4857b24f0c748d985d3a080d0161a85248
         name: networking-certmanager
         ports:
         - containerPort: 9090
@@ -1746,7 +1746,7 @@ kind: Deployment
 metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: networking-istio
   namespace: knative-serving
 spec:
@@ -1773,7 +1773,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-nightly/github.com/knative/serving/cmd/networking/istio@sha256:6170ea5a1e9cf9b4f148db3bcd1ca75fefa5d2779455dc5701bc3a0847d8f5e9
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/networking/istio@sha256:bb4407e4714511cd9429e86536c283265629a2c11c80633d91c0f798c494a16f
         name: networking-istio
         ports:
         - containerPort: 9090
@@ -1801,7 +1801,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serving.knative.dev/release: "v20190625-cb5c1810"
+    serving.knative.dev/release: "v0.7.0"
   name: webhook
   namespace: knative-serving
 spec:
@@ -1818,7 +1818,7 @@ spec:
       labels:
         app: webhook
         role: webhook
-        serving.knative.dev/release: "v20190625-cb5c1810"
+        serving.knative.dev/release: "v0.7.0"
     spec:
       containers:
       - env:
@@ -1828,7 +1828,7 @@ spec:
               fieldPath: metadata.namespace
         - name: CONFIG_LOGGING_NAME
           value: config-logging
-        image: gcr.io/knative-nightly/github.com/knative/serving/cmd/webhook@sha256:207473f76092eae2ca74bd450fa4159045ced8a0c37d8fd37ecdb9d0c237fb46
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/webhook@sha256:d9918d40492e0b20b48576ff6182e2ab896e50dfd2313cb471419be98f821b9c
         name: webhook
         resources:
           limits:
