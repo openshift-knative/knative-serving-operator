@@ -20,6 +20,20 @@ spec:
         autoscaleEnabled: false
       istio-egressgateway:
         enabled: false
+      cluster-local-gateway:
+        autoscaleEnabled: false
+        enabled: true
+        labels:
+          app: cluster-local-gateway
+          istio: cluster-local-gateway
+        ports:
+          - name: status-port
+            port: 15020
+          - name: http2
+            port: 80
+            targetPort: 80
+          - name: https
+            port: 443
     grafana:
       enabled: false
     mixer:

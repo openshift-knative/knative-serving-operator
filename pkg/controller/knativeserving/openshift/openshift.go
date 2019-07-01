@@ -31,13 +31,18 @@ const (
 	// The SA are added to priviledged for injection of istio-proxy https://maistra.io/docs/getting_started/application-requirements/
 	// Relaxing security constraints is only necessary during the OpenShift Service Mesh Technology Preview phase (as per the docs).
 	serviceAccountName = "system:serviceaccount:knative-serving:controller"
-	sccName            = "privileged"
+	// The SA are added to anyuid user to give permission to cluster-local-gateway
+	saNameForClusterLocalGateway = "system:serviceaccount:istio-system:cluster-local-gateway-service-account"
 )
 
 var (
+	sccNames = map[string]string{
+		"privileged": serviceAccountName,
+		"anyuid":     saNameForClusterLocalGateway,
+	}
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController},
-		PreInstalls:  []common.Extender{ensureMaistra, caBundleConfigMap, addUserToSCC},
+		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
 		PostInstalls: []common.Extender{ensureOpenshiftIngress},
 	}
 	log    = logf.Log.WithName("openshift")
@@ -222,7 +227,16 @@ func egress(u *unstructured.Unstructured) error {
 	return nil
 }
 
-func addUserToSCC(instance *servingv1alpha1.KnativeServing) error {
+func addUsersToSCCs(instance *servingv1alpha1.KnativeServing) error {
+	for sccName, user := range sccNames {
+		if err := addToSCC(sccName, user); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addToSCC(sccName, user string) error {
 	scc := &unstructured.Unstructured{}
 	scc.SetAPIVersion("security.openshift.io/v1")
 	scc.SetKind("SecurityContextConstraints")
@@ -231,23 +245,27 @@ func addUserToSCC(instance *servingv1alpha1.KnativeServing) error {
 	if err != nil {
 		return err
 	}
+
 	// Verify if SA has already been assigned to the SCC
 	existing, exists, _ := unstructured.NestedStringSlice(scc.UnstructuredContent(), "users")
 	if exists {
 		for _, e := range existing {
-			if e == serviceAccountName {
+			if e == user {
 				return nil
 			}
 		}
-		existing = append(existing, serviceAccountName)
+		existing = append(existing, user)
 	}
 
-	unstructured.SetNestedStringSlice(scc.UnstructuredContent(), existing, "users")
+	err = unstructured.SetNestedStringSlice(scc.UnstructuredContent(), existing, "users")
+	if err != nil {
+		return err
+	}
 	err = api.Update(context.TODO(), scc)
 	if err != nil {
 		return err
 	}
-	log.Info(fmt.Sprintf("Added ServiceAccount %q to SecurityContextConstraints %q", serviceAccountName, sccName))
+	log.Info(fmt.Sprintf("Added ServiceAccount %q to SecurityContextConstraints %q", user, sccName))
 	return nil
 }
 
