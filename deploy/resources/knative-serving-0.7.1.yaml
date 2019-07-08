@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   labels:
     istio-injection: enabled
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: knative-serving
 
 ---
@@ -13,7 +13,7 @@ metadata:
   labels:
     networking.knative.dev/certificate-provider: cert-manager
     serving.knative.dev/controller: "true"
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: knative-serving-certmanager
 rules:
 - apiGroups:
@@ -36,7 +36,7 @@ metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
     serving.knative.dev/controller: "true"
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: knative-serving-istio
 rules:
 - apiGroups:
@@ -59,7 +59,7 @@ kind: ClusterRole
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: custom-metrics-server-resources
 rules:
 - apiGroups:
@@ -78,7 +78,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: knative-serving-admin
 rules: []
 ---
@@ -87,7 +87,7 @@ kind: ClusterRole
 metadata:
   labels:
     serving.knative.dev/controller: "true"
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: knative-serving-core
 rules:
 - apiGroups:
@@ -199,7 +199,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: controller
   namespace: knative-serving
 
@@ -209,7 +209,7 @@ kind: ClusterRoleBinding
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: custom-metrics:system:auth-delegator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -226,7 +226,7 @@ kind: ClusterRoleBinding
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: hpa-controller-custom-metrics
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -242,7 +242,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: knative-serving-controller-admin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -259,7 +259,7 @@ kind: RoleBinding
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: custom-metrics-auth-reader
   namespace: kube-system
 roleRef:
@@ -277,7 +277,7 @@ kind: Gateway
 metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: knative-ingress-gateway
   namespace: knative-serving
 spec:
@@ -305,7 +305,7 @@ kind: Gateway
 metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: cluster-local-gateway
   namespace: knative-serving
 spec:
@@ -325,7 +325,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: certificates.networking.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -357,7 +357,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: clusteringresses.networking.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -380,51 +380,6 @@ spec:
   subresources:
     status: {}
   version: v1alpha1
-
----
-apiVersion: apiextensions.k8s.io/v1beta1
-kind: CustomResourceDefinition
-metadata:
-  labels:
-    knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
-  name: configurations.serving.knative.dev
-spec:
-  additionalPrinterColumns:
-  - JSONPath: .status.latestCreatedRevisionName
-    name: LatestCreated
-    type: string
-  - JSONPath: .status.latestReadyRevisionName
-    name: LatestReady
-    type: string
-  - JSONPath: .status.conditions[?(@.type=='Ready')].status
-    name: Ready
-    type: string
-  - JSONPath: .status.conditions[?(@.type=='Ready')].reason
-    name: Reason
-    type: string
-  group: serving.knative.dev
-  names:
-    categories:
-    - all
-    - knative
-    - serving
-    kind: Configuration
-    plural: configurations
-    shortNames:
-    - config
-    - cfg
-    singular: configuration
-  scope: Namespaced
-  subresources:
-    status: {}
-  versions:
-  - name: v1alpha1
-    served: true
-    storage: true
-  - name: v1beta1
-    served: true
-    storage: false
 
 ---
 apiVersion: apiextensions.k8s.io/v1beta1
@@ -456,7 +411,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: ingresses.networking.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -488,7 +443,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: podautoscalers.autoscaling.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -520,140 +475,7 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
-  name: revisions.serving.knative.dev
-spec:
-  additionalPrinterColumns:
-  - JSONPath: .status.serviceName
-    name: Service Name
-    type: string
-  - JSONPath: .metadata.labels['serving\.knative\.dev/configurationGeneration']
-    name: Generation
-    type: string
-  - JSONPath: .status.conditions[?(@.type=='Ready')].status
-    name: Ready
-    type: string
-  - JSONPath: .status.conditions[?(@.type=='Ready')].reason
-    name: Reason
-    type: string
-  group: serving.knative.dev
-  names:
-    categories:
-    - all
-    - knative
-    - serving
-    kind: Revision
-    plural: revisions
-    shortNames:
-    - rev
-    singular: revision
-  scope: Namespaced
-  subresources:
-    status: {}
-  versions:
-  - name: v1alpha1
-    served: true
-    storage: true
-  - name: v1beta1
-    served: true
-    storage: false
-
----
-apiVersion: apiextensions.k8s.io/v1beta1
-kind: CustomResourceDefinition
-metadata:
-  labels:
-    knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
-  name: routes.serving.knative.dev
-spec:
-  additionalPrinterColumns:
-  - JSONPath: .status.url
-    name: URL
-    type: string
-  - JSONPath: .status.conditions[?(@.type=='Ready')].status
-    name: Ready
-    type: string
-  - JSONPath: .status.conditions[?(@.type=='Ready')].reason
-    name: Reason
-    type: string
-  group: serving.knative.dev
-  names:
-    categories:
-    - all
-    - knative
-    - serving
-    kind: Route
-    plural: routes
-    shortNames:
-    - rt
-    singular: route
-  scope: Namespaced
-  subresources:
-    status: {}
-  versions:
-  - name: v1alpha1
-    served: true
-    storage: true
-  - name: v1beta1
-    served: true
-    storage: false
-
----
-apiVersion: apiextensions.k8s.io/v1beta1
-kind: CustomResourceDefinition
-metadata:
-  labels:
-    knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
-  name: services.serving.knative.dev
-spec:
-  additionalPrinterColumns:
-  - JSONPath: .status.url
-    name: URL
-    type: string
-  - JSONPath: .status.latestCreatedRevisionName
-    name: LatestCreated
-    type: string
-  - JSONPath: .status.latestReadyRevisionName
-    name: LatestReady
-    type: string
-  - JSONPath: .status.conditions[?(@.type=='Ready')].status
-    name: Ready
-    type: string
-  - JSONPath: .status.conditions[?(@.type=='Ready')].reason
-    name: Reason
-    type: string
-  group: serving.knative.dev
-  names:
-    categories:
-    - all
-    - knative
-    - serving
-    kind: Service
-    plural: services
-    shortNames:
-    - kservice
-    - ksvc
-    singular: service
-  scope: Namespaced
-  subresources:
-    status: {}
-  versions:
-  - name: v1alpha1
-    served: true
-    storage: true
-  - name: v1beta1
-    served: true
-    storage: false
-
----
-apiVersion: apiextensions.k8s.io/v1beta1
-kind: CustomResourceDefinition
-metadata:
-  labels:
-    knative.dev/crd-install: "true"
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: serverlessservices.networking.internal.knative.dev
 spec:
   additionalPrinterColumns:
@@ -694,7 +516,7 @@ kind: Service
 metadata:
   labels:
     app: activator
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: activator-service
   namespace: knative-serving
 spec:
@@ -721,7 +543,7 @@ kind: Service
 metadata:
   labels:
     app: controller
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: controller
   namespace: knative-serving
 spec:
@@ -739,7 +561,7 @@ kind: Service
 metadata:
   labels:
     role: webhook
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: webhook
   namespace: knative-serving
 spec:
@@ -754,18 +576,18 @@ apiVersion: caching.internal.knative.dev/v1alpha1
 kind: Image
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: queue-proxy
   namespace: knative-serving
 spec:
-  image: gcr.io/knative-releases/github.com/knative/serving/cmd/queue@sha256:e007c0a78c541600466f88954deee65c517246a23345bfba45a7f212d09b8f3b
+  image: gcr.io/knative-releases/github.com/knative/serving/cmd/queue@sha256:89fb5a1d2d9c0abd10ce3135c02f9e9ffbf93087a3ece7481615a0f9d9209713
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: activator
   namespace: knative-serving
 spec:
@@ -781,7 +603,7 @@ spec:
       labels:
         app: activator
         role: activator
-        serving.knative.dev/release: "v0.7.0"
+        serving.knative.dev/release: "v0.7.1"
     spec:
       containers:
       - args:
@@ -802,7 +624,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-releases/github.com/knative/serving/cmd/activator@sha256:57fe5f1a8b1d12f29fe9e3a904b00c7219e5ce5825d94f33339db929e92257db
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/activator@sha256:864c0dc5e8d8eeee6162f448ae6452ab53f53642536a4720d59b6bc2402df01f
         livenessProbe:
           httpGet:
             httpHeaders:
@@ -854,7 +676,7 @@ kind: Service
 metadata:
   labels:
     app: autoscaler
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: autoscaler
   namespace: knative-serving
 spec:
@@ -879,7 +701,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: autoscaler
   namespace: knative-serving
 spec:
@@ -894,7 +716,7 @@ spec:
         sidecar.istio.io/inject: "true"
       labels:
         app: autoscaler
-        serving.knative.dev/release: "v0.7.0"
+        serving.knative.dev/release: "v0.7.1"
     spec:
       containers:
       - args:
@@ -911,7 +733,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-releases/github.com/knative/serving/cmd/autoscaler@sha256:2c2370df2751741348e1cc456f31425cb2455c377ddb45d3f6c17e743fd63d78
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/autoscaler@sha256:026860790fe07bf3dcd42fe2c0a21c7c15ef59f4cb772b6e369f927620f6c0ec
         livenessProbe:
           httpGet:
             httpHeaders:
@@ -1047,7 +869,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-autoscaler
   namespace: knative-serving
 
@@ -1088,7 +910,7 @@ kind: ConfigMap
 metadata:
   labels:
     networking.knative.dev/certificate-provider: cert-manager
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-certmanager
   namespace: knative-serving
 
@@ -1151,7 +973,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-defaults
   namespace: knative-serving
 
@@ -1176,11 +998,11 @@ data:
 
     # List of repositories for which tag to digest resolving should be skipped
     registriesSkippingTagResolving: "ko.local,dev.local"
-  queueSidecarImage: gcr.io/knative-releases/github.com/knative/serving/cmd/queue@sha256:e007c0a78c541600466f88954deee65c517246a23345bfba45a7f212d09b8f3b
+  queueSidecarImage: gcr.io/knative-releases/github.com/knative/serving/cmd/queue@sha256:89fb5a1d2d9c0abd10ce3135c02f9e9ffbf93087a3ece7481615a0f9d9209713
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-deployment
   namespace: knative-serving
 
@@ -1226,7 +1048,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-domain
   namespace: knative-serving
 
@@ -1265,7 +1087,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-gc
   namespace: knative-serving
 
@@ -1310,7 +1132,7 @@ kind: ConfigMap
 metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-istio
   namespace: knative-serving
 
@@ -1368,7 +1190,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-logging
   namespace: knative-serving
 
@@ -1480,7 +1302,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-network
   namespace: knative-serving
 
@@ -1568,7 +1390,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-observability
   namespace: knative-serving
 
@@ -1606,7 +1428,7 @@ data:
 kind: ConfigMap
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: config-tracing
   namespace: knative-serving
 
@@ -1615,7 +1437,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: controller
   namespace: knative-serving
 spec:
@@ -1629,7 +1451,7 @@ spec:
         sidecar.istio.io/inject: "false"
       labels:
         app: controller
-        serving.knative.dev/release: "v0.7.0"
+        serving.knative.dev/release: "v0.7.1"
     spec:
       containers:
       - env:
@@ -1643,7 +1465,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-releases/github.com/knative/serving/cmd/controller@sha256:016c95f2d94be89683d1ddb7ea959667fd2d899087a4145a31d26b5d6f0bb38f
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/controller@sha256:36e48772b4a38d4790c4b72d3e05c5552b3b083709ba6bf3f355af0c4ebb216a
         name: controller
         ports:
         - containerPort: 9090
@@ -1672,7 +1494,7 @@ kind: APIService
 metadata:
   labels:
     autoscaling.knative.dev/metric-provider: custom-metrics
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: v1beta1.custom.metrics.k8s.io
 spec:
   group: custom.metrics.k8s.io
@@ -1690,7 +1512,7 @@ kind: Deployment
 metadata:
   labels:
     networking.knative.dev/certificate-provider: cert-manager
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: networking-certmanager
   namespace: knative-serving
 spec:
@@ -1717,7 +1539,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-releases/github.com/knative/serving/cmd/networking/certmanager@sha256:c757629165393f778d5c0e8b611c9c4857b24f0c748d985d3a080d0161a85248
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/networking/certmanager@sha256:0868e623602dfa736092baf15c71930dff67a5eec0d89a689496525b32bdad08
         name: networking-certmanager
         ports:
         - containerPort: 9090
@@ -1746,7 +1568,7 @@ kind: Deployment
 metadata:
   labels:
     networking.knative.dev/ingress-provider: istio
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: networking-istio
   namespace: knative-serving
 spec:
@@ -1773,7 +1595,7 @@ spec:
           value: config-observability
         - name: METRICS_DOMAIN
           value: knative.dev/serving
-        image: gcr.io/knative-releases/github.com/knative/serving/cmd/networking/istio@sha256:bb4407e4714511cd9429e86536c283265629a2c11c80633d91c0f798c494a16f
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/networking/istio@sha256:5dfcc86f10638ce64c173969a685cf8d3a243cf863b62c95a952c0b4f9513f88
         name: networking-istio
         ports:
         - containerPort: 9090
@@ -1801,7 +1623,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serving.knative.dev/release: "v0.7.0"
+    serving.knative.dev/release: "v0.7.1"
   name: webhook
   namespace: knative-serving
 spec:
@@ -1818,7 +1640,7 @@ spec:
       labels:
         app: webhook
         role: webhook
-        serving.knative.dev/release: "v0.7.0"
+        serving.knative.dev/release: "v0.7.1"
     spec:
       containers:
       - env:
@@ -1828,7 +1650,7 @@ spec:
               fieldPath: metadata.namespace
         - name: CONFIG_LOGGING_NAME
           value: config-logging
-        image: gcr.io/knative-releases/github.com/knative/serving/cmd/webhook@sha256:d9918d40492e0b20b48576ff6182e2ab896e50dfd2313cb471419be98f821b9c
+        image: gcr.io/knative-releases/github.com/knative/serving/cmd/webhook@sha256:76e726d1f3f015623513224c3787793f0e71294f8df9e6dca46dc92f31bec1c3
         name: webhook
         resources:
           limits:
@@ -1847,5 +1669,171 @@ spec:
       - configMap:
           name: config-logging
         name: config-logging
+
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  labels:
+    knative.dev/crd-install: "true"
+    serving.knative.dev/release: "v0.7.1"
+  name: configurations.serving.knative.dev
+spec:
+  additionalPrinterColumns:
+  - JSONPath: .status.latestCreatedRevisionName
+    name: LatestCreated
+    type: string
+  - JSONPath: .status.latestReadyRevisionName
+    name: LatestReady
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].status
+    name: Ready
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].reason
+    name: Reason
+    type: string
+  group: serving.knative.dev
+  names:
+    categories:
+    - all
+    - knative
+    - serving
+    kind: Configuration
+    plural: configurations
+    shortNames:
+    - config
+    - cfg
+    singular: configuration
+  scope: Namespaced
+  subresources:
+    status: {}
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  labels:
+    knative.dev/crd-install: "true"
+    serving.knative.dev/release: "v0.7.1"
+  name: revisions.serving.knative.dev
+spec:
+  additionalPrinterColumns:
+  - JSONPath: .status.serviceName
+    name: Service Name
+    type: string
+  - JSONPath: .metadata.labels['serving\.knative\.dev/configurationGeneration']
+    name: Generation
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].status
+    name: Ready
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].reason
+    name: Reason
+    type: string
+  group: serving.knative.dev
+  names:
+    categories:
+    - all
+    - knative
+    - serving
+    kind: Revision
+    plural: revisions
+    shortNames:
+    - rev
+    singular: revision
+  scope: Namespaced
+  subresources:
+    status: {}
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  labels:
+    knative.dev/crd-install: "true"
+    serving.knative.dev/release: "v0.7.1"
+  name: routes.serving.knative.dev
+spec:
+  additionalPrinterColumns:
+  - JSONPath: .status.url
+    name: URL
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].status
+    name: Ready
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].reason
+    name: Reason
+    type: string
+  group: serving.knative.dev
+  names:
+    categories:
+    - all
+    - knative
+    - serving
+    kind: Route
+    plural: routes
+    shortNames:
+    - rt
+    singular: route
+  scope: Namespaced
+  subresources:
+    status: {}
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  labels:
+    knative.dev/crd-install: "true"
+    serving.knative.dev/release: "v0.7.1"
+  name: services.serving.knative.dev
+spec:
+  additionalPrinterColumns:
+  - JSONPath: .status.url
+    name: URL
+    type: string
+  - JSONPath: .status.latestCreatedRevisionName
+    name: LatestCreated
+    type: string
+  - JSONPath: .status.latestReadyRevisionName
+    name: LatestReady
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].status
+    name: Ready
+    type: string
+  - JSONPath: .status.conditions[?(@.type=='Ready')].reason
+    name: Reason
+    type: string
+  group: serving.knative.dev
+  names:
+    categories:
+    - all
+    - knative
+    - serving
+    kind: Service
+    plural: services
+    shortNames:
+    - kservice
+    - ksvc
+    singular: service
+  scope: Namespaced
+  subresources:
+    status: {}
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
 
 ---
