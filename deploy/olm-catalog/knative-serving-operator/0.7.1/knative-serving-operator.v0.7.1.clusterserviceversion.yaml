@@ -6,14 +6,14 @@ metadata:
     capabilities: Seamless Upgrades
     categories: Networking,Integration & Delivery,Cloud Provider,Developer Tools
     certified: "false"
-    containerImage: quay.io/openshift-knative/knative-serving-operator:v0.7.0
+    containerImage: quay.io/openshift-knative/knative-serving-operator:v0.7.1
     createdAt: "2019-05-03T17:00:00Z"
     description: |-
       Knative Serving builds on Kubernetes to support deploying and
       serving of serverless applications and functions.
     repository: https://github.com/openshift-knative/knative-serving-operator
     support: Red Hat
-  name: knative-serving-operator.v0.7.0
+  name: knative-serving-operator.v0.7.1
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -95,7 +95,9 @@ spec:
                       fieldPath: metadata.name
                 - name: OPERATOR_NAME
                   value: knative-serving-operator
-                image: quay.io/openshift-knative/knative-serving-operator:v0.6.0
+                image: quay.io/openshift-knative/knative-serving-operator:v0.7.1
+                args:
+                  - --filename=https://raw.githubusercontent.com/openshift/knative-serving/release-v0.7.1/openshift/release/knative-serving-v0.7.1.yaml
                 imagePullPolicy: Always
                 name: knative-serving-operator
                 resources: {}
@@ -178,4 +180,4 @@ spec:
   provider:
     name: Red Hat
   replaces: knative-serving-operator.v0.6.0
-  version: 0.7.0
+  version: 0.7.1
