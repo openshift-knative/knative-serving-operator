@@ -159,9 +159,7 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	// Add label openshift.io/cluster-monitoring to namespace
 	ns := &corev1.Namespace{}
 	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
-		if !meta.IsNoMatchError(err) {
-			return err
-		}
+		return err
 	}
 
 	const monitoringLabel = "openshift.io/cluster-monitoring"
@@ -172,20 +170,21 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	}
 
 	// Install ServiceMonitor
-	if manifest, err := mf.NewManifest(path, false, api); err == nil {
-		transforms := []mf.Transformer{mf.InjectOwner(instance)}
-		if len(namespace) > 0 {
-			transforms = append(transforms, mf.InjectNamespace(namespace))
-		}
-		if err = manifest.Transform(transforms...); err == nil {
-			err = manifest.ApplyAll()
-		}
-		if err != nil {
-			log.Error(err, "Unable to install ServiceMonitor")
-			return err
-		}
-	} else {
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
 		log.Error(err, "Unable to create ServiceMonitor install manifest")
+		return err
+	}
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(namespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(namespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform service monitor manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to install ServiceMonitor")
 		return err
 	}
 	return nil
