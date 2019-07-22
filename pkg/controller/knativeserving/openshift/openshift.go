@@ -12,6 +12,7 @@ import (
 
 	mf "github.com/jcrossley3/manifestival"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -47,7 +48,7 @@ var (
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment},
 		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
-		PostInstalls: []common.Extender{ensureOpenshiftIngress},
+		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -117,6 +118,12 @@ func istioExists(namespace string) (bool, error) {
 	)
 }
 
+func serviceMonitorExists(namespace string) (bool, error) {
+	return anyKindExists(api, namespace,
+		schema.GroupVersionKind{Group: "monitoring.coreos.com", Version: "v1", Kind: "servicemonitor"},
+	)
+}
+
 // ensureOpenshiftIngress ensures knative-openshift-ingress operator is installed
 func ensureOpenshiftIngress(instance *servingv1alpha1.KnativeServing) error {
 	namespace := instance.GetNamespace()
@@ -136,6 +143,52 @@ func ensureOpenshiftIngress(instance *servingv1alpha1.KnativeServing) error {
 		}
 	} else {
 		log.Error(err, "Unable to create Knative OpenShift Ingress operator install manifest")
+		return err
+	}
+	return nil
+}
+
+func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
+	namespace := instance.GetNamespace()
+	log.Info("Installing ServiceMonitor")
+	const path = "deploy/service_monitor.yaml"
+
+	if serviceMonitorExists, err := serviceMonitorExists(namespace); err != nil {
+		return err
+	} else if !serviceMonitorExists {
+		log.Info("ServiceMonitor CRD is not installed. Skip to install ServiceMonitor")
+		return nil
+	}
+
+	// Add label openshift.io/cluster-monitoring to namespace
+	ns := &corev1.Namespace{}
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
+		return err
+	}
+
+	const monitoringLabel = "openshift.io/cluster-monitoring"
+	ns.Labels[monitoringLabel] = "true"
+	if err := api.Update(context.TODO(), ns); err != nil {
+		log.Error(err, fmt.Sprintf("Could not add label %q to namespace %q", monitoringLabel, namespace))
+		return err
+	}
+
+	// Install ServiceMonitor
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create ServiceMonitor install manifest")
+		return err
+	}
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(namespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(namespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform service monitor manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to install ServiceMonitor")
 		return err
 	}
 	return nil
