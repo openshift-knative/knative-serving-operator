@@ -151,7 +151,7 @@ func ensureOpenshiftIngress(instance *servingv1alpha1.KnativeServing) error {
 func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	namespace := instance.GetNamespace()
 	log.Info("Installing ServiceMonitor")
-	const path = "deploy/service_monitor.yaml"
+	const path = "deploy/resources/monitoring/service_monitor.yaml"
 
 	if serviceMonitorExists, err := serviceMonitorExists(namespace); err != nil {
 		return err
