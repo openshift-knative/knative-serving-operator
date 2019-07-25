@@ -14,6 +14,7 @@ rules:
   - ""
   resources:
   - pods
+  - services
   - events
   - configmaps
   verbs:
@@ -44,6 +45,9 @@ rules:
   - clusteringresses
   - clusteringresses/status
   - clusteringresses/finalizers
+  - ingresses
+  - ingresses/status
+  - ingresses/finalizers
   verbs:
   - "*"
 - apiGroups:
@@ -55,6 +59,13 @@ rules:
   - routes/finalizers
   verbs:
   - "*"
+- apiGroups:
+  - serving.knative.dev
+  resources:
+  - knativeservings
+  - knativeservings/finalizers
+  verbs:
+  - '*'
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -87,7 +98,7 @@ spec:
       serviceAccountName: knative-openshift-ingress
       containers:
         - name: knative-openshift-ingress
-          image: quay.io/openshift-knative/knative-openshift-ingress:v0.0.5
+          image: quay.io/openshift-knative/knative-openshift-ingress:v0.0.6
           command:
           - knative-openshift-ingress
           imagePullPolicy: Always
