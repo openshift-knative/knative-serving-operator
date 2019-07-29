@@ -127,7 +127,7 @@ func serviceMonitorExists(namespace string) (bool, error) {
 // ensureOpenshiftIngress ensures knative-openshift-ingress operator is installed
 func ensureOpenshiftIngress(instance *servingv1alpha1.KnativeServing) error {
 	namespace := instance.GetNamespace()
-	const path = "deploy/resources/openshift-ingress/openshift-ingress-0.0.5.yaml"
+	const path = "deploy/resources/openshift-ingress/openshift-ingress-0.0.6.yaml"
 	log.Info("Ensuring Knative OpenShift Ingress operator is installed")
 	if manifest, err := mf.NewManifest(path, false, api); err == nil {
 		transforms := []mf.Transformer{mf.InjectOwner(instance)}
