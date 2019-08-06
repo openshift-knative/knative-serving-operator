@@ -48,7 +48,7 @@ var (
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment},
 		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
-		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
+		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor, installMeteringEntities},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -488,6 +488,39 @@ func augmentAutoscalerDeployment(u *unstructured.Unstructured) error {
 		if err := scheme.Convert(deploy, u, nil); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func installMeteringEntities(instance *servingv1alpha1.KnativeServing) error {
+	namespace := instance.GetNamespace()
+	log.Info("Installing Metering DataSources and Queries")
+	const path = "deploy/resources/metering"
+
+	if meteringExists, err := anyKindExists(api, namespace,
+		schema.GroupVersionKind{Group: "metering.openshift.io", Version: "v1alpha1", Kind: "reportdatasource"}); err != nil {
+		return err
+	} else if !meteringExists {
+		log.Info("Metering CRD is not installed. Skip to install Metering entities")
+		return nil
+	}
+
+	manifest, err := mf.NewManifest(path, true, api)
+	if err != nil {
+		log.Error(err, "Unable to create Metering install manifest")
+		return err
+	}
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(namespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(namespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform metering manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to install Metering entities")
+		return err
 	}
 	return nil
 }

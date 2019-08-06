@@ -1,0 +1,18 @@
+apiVersion: metering.openshift.io/v1alpha1
+kind: ReportDataSource
+metadata:
+  name: knative-service-cpu-usage
+spec:
+  prometheusMetricsImporter:
+    query: >
+      sum
+          by(namespace,
+             label_serving_knative_dev_service,
+             label_serving_knative_dev_revision)
+          (
+            label_replace(rate(container_cpu_usage_seconds_total{container_name!="POD",container_name!="",pod_name!=""}[1m]), "pod", "$1", "pod_name", "(.*)")
+            *
+            on(pod, namespace)
+            group_left(label_serving_knative_dev_service, label_serving_knative_dev_revision)
+            kube_pod_labels{label_serving_knative_dev_service!=""}
+          )
