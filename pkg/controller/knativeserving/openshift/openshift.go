@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
@@ -46,9 +47,9 @@ var (
 		"anyuid":     saNameForClusterLocalGateway,
 	}
 	extension = common.Extension{
-		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment},
-		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap, removeCaBundleFromApiservice},
-		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor, addCaBundleToApiservice},
+		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice},
+		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
+		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -194,41 +195,26 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	return nil
 }
 
-// removeCaBundleFromApiservice removes spec.caBundle from v1beta1.custom.metrics.k8s.io.
-// This is necessary as `insecureSkipTLSVerify: true` in resources/knative-serving-x.y.z.yaml conflicts
-// with service.alpha.openshift.io/inject-cabundle annotaiton in addCaBundleToApiservice.
-func removeCaBundleFromApiservice(instance *servingv1alpha1.KnativeServing) error {
-	log.Info("Patching caBundle to APIService v1beta1.custom.metrics.k8s.io to disable caBundle")
-	const path = "deploy/resources/apiservice/apiservice_disable.yaml"
-
-	manifest, err := mf.NewManifest(path, false, api)
-	if err != nil {
-		log.Error(err, "Unable to create apiservice disable patch manifest")
-		return err
-	}
-	if err := manifest.ApplyAll(); err != nil {
-		log.Error(err, "Unable to patch apiservice/v1beta1.custom.metrics.k8s.io")
-		return err
-	}
-	return nil
-}
-
 // addCaBundleToApiservice adds service.alpha.openshift.io/inject-cabundle annotation and
 // set insecureSkipTLSVerify to be false.
-func addCaBundleToApiservice(instance *servingv1alpha1.KnativeServing) error {
-	log.Info("Patching caBundle to APIService v1beta1.custom.metrics.k8s.io")
-	const path = "deploy/resources/apiservice/apiservice.yaml"
+func addCaBundleToApiservice(u *unstructured.Unstructured) error {
+	if u.GetKind() == "APIService" && u.GetName() == "v1beta1.custom.metrics.k8s.io" {
+		apiService := &apiregistrationv1beta1.APIService{}
+		if err := scheme.Convert(u, apiService, nil); err != nil {
+			return err
+		}
 
-	manifest, err := mf.NewManifest(path, false, api)
-	if err != nil {
-		log.Error(err, "Unable to create apiservice enable patch manifest")
-		return err
-	}
-	if err := manifest.ApplyAll(); err != nil {
-		log.Error(err, "Unable to patch apiservice/v1beta1.custom.metrics.k8s.io")
-		return err
+		apiService.Spec.InsecureSkipTLSVerify = false
+		if apiService.ObjectMeta.Annotations == nil {
+			apiService.ObjectMeta.Annotations = make(map[string]string)
+		}
+		apiService.ObjectMeta.Annotations["service.alpha.openshift.io/inject-cabundle"] = "true"
+		if err := scheme.Convert(apiService, u, nil); err != nil {
+			return err
+		}
 	}
 	return nil
+
 }
 
 func installMaistra(c client.Client) error {
