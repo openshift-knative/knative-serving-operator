@@ -477,9 +477,12 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:0d1802b8b19d3d89781268c84ca7cec7e5e048c9537c903994adfb0f813f3539"
+  digest = "1:2b67f85621643d1e2f37ea505db6792b4ea26719113d96c1700801ab4f27ad7d"
   name = "github.com/openshift/api"
-  packages = ["config/v1"]
+  packages = [
+    "config/v1",
+    "route/v1",
+  ]
   pruneopts = "NUT"
   revision = "275768afc8f66b79aeb12debf94ffc85255104ad"
 
@@ -1229,6 +1232,7 @@
     "github.com/knative/test-infra/scripts",
     "github.com/knative/test-infra/tools/dep-collector",
     "github.com/openshift/api/config/v1",
+    "github.com/openshift/api/route/v1",
     "github.com/operator-framework/operator-sdk/pkg/k8sutil",
     "github.com/operator-framework/operator-sdk/pkg/leader",
     "github.com/operator-framework/operator-sdk/pkg/log/zap",

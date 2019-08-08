@@ -9,6 +9,7 @@ import (
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
 	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 
 	mf "github.com/jcrossley3/manifestival"
 	appsv1 "k8s.io/api/apps/v1"
@@ -46,7 +47,7 @@ var (
 		"anyuid":     saNameForClusterLocalGateway,
 	}
 	extension = common.Extension{
-		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment},
+		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, kibana},
 		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
 		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
 	}
@@ -64,12 +65,17 @@ func Configure(c client.Client, s *runtime.Scheme) (*common.Extension, error) {
 		return nil, nil
 	}
 
-	// Register scheme
+	// Register config v1 scheme
 	if err := configv1.Install(s); err != nil {
-		log.Error(err, "Unable to register scheme")
+		log.Error(err, "Unable to register configv1 scheme")
 		return nil, err
 	}
 
+	// Register route v1 scheme
+	if err := routev1.Install(s); err != nil {
+		log.Error(err, "Unable to register routev1 scheme")
+		return nil, err
+	}
 	api = c
 	scheme = s
 	return &extension, nil
@@ -487,6 +493,30 @@ func augmentAutoscalerDeployment(u *unstructured.Unstructured) error {
 		container.Args = []string{"--secure-port=8443", "--tls-cert-file=" + certFile, "--tls-private-key-file=" + keyFile}
 		if err := scheme.Convert(deploy, u, nil); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// Update logging URL template for Knative service's revision with concrete kibana hostname if cluster logging has been installed
+func kibana(u *unstructured.Unstructured) error {
+	if u.GetKind() == "ConfigMap" && u.GetName() == "config-observability" {
+		// attempt to locate kibana route which is available if openshift-logging has been configured
+		route := &routev1.Route{}
+		if err := api.Get(context.TODO(), types.NamespacedName{Name: "kibana", Namespace: "openshift-logging"}, route); err != nil {
+			if !meta.IsNoMatchError(err) {
+				return err
+			}
+			return nil
+		}
+		// retreive host from kibana route, construct a concrete logUrl template with actual host name, update config-observability
+		if len(route.Status.Ingress) > 0 {
+			host := route.Status.Ingress[0].Host
+			if len(host) > 0 {
+				url := "https://" + host + "/app/kibana#/discover?_a=(index:.all,query:'kubernetes.labels.serving_knative_dev%5C%2FrevisionUID:${REVISION_UID}')"
+				data := map[string]string{"logging.revision-url-template": url}
+				common.UpdateConfigMap(u, data, log)
+			}
 		}
 	}
 	return nil
