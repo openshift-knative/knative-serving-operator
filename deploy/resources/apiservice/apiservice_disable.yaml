@@ -1,0 +1,10 @@
+# This is an OpenShift specific patch for v1beta1.custom.metrics.k8s.io.
+# knative-serving-x.y.z.yaml contains main configurations.
+
+apiVersion: apiregistration.k8s.io/v1beta1
+kind: APIService
+metadata:
+  annotations:
+  name: v1beta1.custom.metrics.k8s.io
+spec:
+  caBundle: ""

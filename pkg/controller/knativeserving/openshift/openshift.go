@@ -47,8 +47,8 @@ var (
 	}
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment},
-		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
-		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
+		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap, removeCaBundleFromApiservice},
+		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor, addCaBundleToApiservice},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -189,6 +189,43 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	}
 	if err := manifest.ApplyAll(); err != nil {
 		log.Error(err, "Unable to install ServiceMonitor")
+		return err
+	}
+	return nil
+}
+
+// removeCaBundleFromApiservice removes spec.caBundle from v1beta1.custom.metrics.k8s.io.
+// This is necessary as `insecureSkipTLSVerify: true` in resources/knative-serving-x.y.z.yaml conflicts
+// with service.alpha.openshift.io/inject-cabundle annotaiton in addCaBundleToApiservice.
+func removeCaBundleFromApiservice(instance *servingv1alpha1.KnativeServing) error {
+	log.Info("Patching caBundle to APIService v1beta1.custom.metrics.k8s.io to disable caBundle")
+	const path = "deploy/resources/apiservice/apiservice_disable.yaml"
+
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create apiservice disable patch manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to patch apiservice/v1beta1.custom.metrics.k8s.io")
+		return err
+	}
+	return nil
+}
+
+// addCaBundleToApiservice adds service.alpha.openshift.io/inject-cabundle annotation and
+// set insecureSkipTLSVerify to be false.
+func addCaBundleToApiservice(instance *servingv1alpha1.KnativeServing) error {
+	log.Info("Patching caBundle to APIService v1beta1.custom.metrics.k8s.io")
+	const path = "deploy/resources/apiservice/apiservice.yaml"
+
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create apiservice enable patch manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to patch apiservice/v1beta1.custom.metrics.k8s.io")
 		return err
 	}
 	return nil
