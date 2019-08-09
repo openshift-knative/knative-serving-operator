@@ -71,6 +71,11 @@ func Configure(c client.Client, s *runtime.Scheme) (*common.Extension, error) {
 		return nil, err
 	}
 
+	if err := apiregistrationv1beta1.AddToScheme(s); err != nil {
+		log.Error(err, "Unable to register apiservice scheme")
+		return nil, err
+	}
+
 	api = c
 	scheme = s
 	return &extension, nil
