@@ -532,9 +532,6 @@ func configureLogURLTemplate(u *unstructured.Unstructured) error {
 		// attempt to locate kibana route which is available if openshift-logging has been configured
 		route := &routev1.Route{}
 		if err := api.Get(context.TODO(), types.NamespacedName{Name: "kibana", Namespace: "openshift-logging"}, route); err != nil {
-			if !meta.IsNoMatchError(err) {
-				return err
-			}
 			return nil
 		}
 		// retrieve host from kibana route, construct a concrete logUrl template with actual host name, update config-observability
