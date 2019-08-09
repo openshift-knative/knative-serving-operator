@@ -47,7 +47,7 @@ var (
 		"anyuid":     saNameForClusterLocalGateway,
 	}
 	extension = common.Extension{
-		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, kibana},
+		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
 		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
 	}
@@ -499,7 +499,7 @@ func augmentAutoscalerDeployment(u *unstructured.Unstructured) error {
 }
 
 // Update logging URL template for Knative service's revision with concrete kibana hostname if cluster logging has been installed
-func kibana(u *unstructured.Unstructured) error {
+func configureLogURLTemplate(u *unstructured.Unstructured) error {
 	if u.GetKind() == "ConfigMap" && u.GetName() == "config-observability" {
 		// attempt to locate kibana route which is available if openshift-logging has been configured
 		route := &routev1.Route{}
@@ -509,10 +509,10 @@ func kibana(u *unstructured.Unstructured) error {
 			}
 			return nil
 		}
-		// retreive host from kibana route, construct a concrete logUrl template with actual host name, update config-observability
+		// retrieve host from kibana route, construct a concrete logUrl template with actual host name, update config-observability
 		if len(route.Status.Ingress) > 0 {
 			host := route.Status.Ingress[0].Host
-			if len(host) > 0 {
+			if host != "" {
 				url := "https://" + host + "/app/kibana#/discover?_a=(index:.all,query:'kubernetes.labels.serving_knative_dev%5C%2FrevisionUID:${REVISION_UID}')"
 				data := map[string]string{"logging.revision-url-template": url}
 				common.UpdateConfigMap(u, data, log)
