@@ -45,6 +45,11 @@ required = [
   revision = "2b1284ed4c93a43499e781493253e2ac5959c4fd"
 
 [[override]]
+  name = "k8s.io/kube-aggregator"
+  # revision for tag "kubernetes-1.13.1"
+  revision = "1e8cd453c47488cff773c5ebcd70ca0b0ce054d9"
+
+[[override]]
   name = "k8s.io/client-go"
   # revision for tag "kubernetes-1.13.1"
   revision = "8d9ed539ba3134352c586810e749e58df4e94e4f"

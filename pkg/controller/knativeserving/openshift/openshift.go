@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
@@ -47,7 +48,7 @@ var (
 		"anyuid":     saNameForClusterLocalGateway,
 	}
 	extension = common.Extension{
-		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, configureLogURLTemplate},
+		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
 		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
 	}
@@ -76,6 +77,11 @@ func Configure(c client.Client, s *runtime.Scheme) (*common.Extension, error) {
 		log.Error(err, "Unable to register routev1 scheme")
 		return nil, err
 	}
+	if err := apiregistrationv1beta1.AddToScheme(s); err != nil {
+		log.Error(err, "Unable to register apiservice scheme")
+		return nil, err
+	}
+
 	api = c
 	scheme = s
 	return &extension, nil
@@ -198,6 +204,28 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 		return err
 	}
 	return nil
+}
+
+// addCaBundleToApiservice adds service.alpha.openshift.io/inject-cabundle annotation and
+// set insecureSkipTLSVerify to be false.
+func addCaBundleToApiservice(u *unstructured.Unstructured) error {
+	if u.GetKind() == "APIService" && u.GetName() == "v1beta1.custom.metrics.k8s.io" {
+		apiService := &apiregistrationv1beta1.APIService{}
+		if err := scheme.Convert(u, apiService, nil); err != nil {
+			return err
+		}
+
+		apiService.Spec.InsecureSkipTLSVerify = false
+		if apiService.ObjectMeta.Annotations == nil {
+			apiService.ObjectMeta.Annotations = make(map[string]string)
+		}
+		apiService.ObjectMeta.Annotations["service.alpha.openshift.io/inject-cabundle"] = "true"
+		if err := scheme.Convert(apiService, u, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+
 }
 
 func installMaistra(c client.Client) error {

@@ -1148,6 +1148,17 @@
   version = "v0.2.0"
 
 [[projects]]
+  digest = "1:0b0903479eacf9b1fd2a1e0511b8b55fa8c314c14804f13dd64d76b5ac953f8f"
+  name = "k8s.io/kube-aggregator"
+  packages = [
+    "pkg/apis/apiregistration",
+    "pkg/apis/apiregistration/v1",
+    "pkg/apis/apiregistration/v1beta1",
+  ]
+  pruneopts = "NUT"
+  revision = "1e8cd453c47488cff773c5ebcd70ca0b0ce054d9"
+
+[[projects]]
   digest = "1:0e3f19aff7173dc501aaab60b603f9985faa1b9b516a8e5d5855784f6cf1989c"
   name = "k8s.io/kube-openapi"
   packages = [
@@ -1259,6 +1270,8 @@
     "k8s.io/code-generator/cmd/informer-gen",
     "k8s.io/code-generator/cmd/lister-gen",
     "k8s.io/gengo/args",
+    "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1",
+    "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1",
     "k8s.io/kube-openapi/cmd/openapi-gen",
     "k8s.io/kube-openapi/pkg/common",
     "sigs.k8s.io/controller-runtime/pkg/client",
