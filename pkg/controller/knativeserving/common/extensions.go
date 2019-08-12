@@ -5,13 +5,14 @@ import (
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 var log = logf.Log.WithName("common")
 
-type Platforms []func(client.Client, *runtime.Scheme, *mf.Manifest) (*Extension, error)
+type Platforms []func(client.Client, *runtime.Scheme, *mf.Manifest, *rest.Config) (*Extension, error)
 type Extender func(*servingv1alpha1.KnativeServing) error
 type Extensions []Extension
 type Extension struct {
@@ -20,9 +21,9 @@ type Extension struct {
 	PostInstalls []Extender
 }
 
-func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manifest *mf.Manifest) (result Extensions, err error) {
+func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manifest *mf.Manifest, cfg *rest.Config) (result Extensions, err error) {
 	for _, fn := range platforms {
-		ext, err := fn(c, scheme, manifest)
+		ext, err := fn(c, scheme, manifest, cfg)
 		if err != nil {
 			return result, err
 		}

@@ -3,15 +3,20 @@ package openshift
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
+	"github.com/openshift-knative/knative-serving-operator/version"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	mf "github.com/jcrossley3/manifestival"
+	metric "github.com/operator-framework/operator-sdk/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -22,8 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
@@ -40,9 +47,18 @@ const (
 
 	// The secret in which the tls certificate for the autoscaler will be written.
 	autoscalerTlsSecretName = "autoscaler-adapter-tls"
+	// knativeServingInstalledNamespace is the ns where knative serving operator has been installed
+	knativeServingInstalledNamespace = "NAMESPACE"
+	// service monitor created successfully when monitoringLabel added to namespace
+	monitoringLabel = "openshift.io/cluster-monitoring"
 )
 
 var (
+	knativeVersion = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "knative_serving_version",
+		Help: "Installed knative serving version info",
+	}, []string{"version", "namespace", "component"})
+
 	sccNames = map[string]string{
 		"privileged": serviceAccountName,
 		"anyuid":     saNameForClusterLocalGateway,
@@ -50,15 +66,23 @@ var (
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{addUsersToSCCs, installNetworkPolicies, ensureMaistra, caBundleConfigMap},
-		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
+		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor, exposeMetricToServiceMonitor},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
 	scheme *runtime.Scheme
+	cfg    *rest.Config
 )
 
+func init() {
+	// Metrics have to be registered to expose:
+	metrics.Registry.MustRegister(
+		knativeVersion,
+	)
+}
+
 // Configure OpenShift if we're soaking in it
-func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*common.Extension, error) {
+func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest, config *rest.Config) (*common.Extension, error) {
 	if routeExists, err := anyKindExists(c, "", schema.GroupVersionKind{"route.openshift.io", "v1", "route"}); err != nil {
 		return nil, err
 	} else if !routeExists {
@@ -94,6 +118,7 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*comm
 
 	api = c
 	scheme = s
+	cfg = config
 	return &extension, nil
 }
 
@@ -183,15 +208,7 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	}
 
 	// Add label openshift.io/cluster-monitoring to namespace
-	ns := &corev1.Namespace{}
-	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
-		return err
-	}
-
-	const monitoringLabel = "openshift.io/cluster-monitoring"
-	ns.Labels[monitoringLabel] = "true"
-	if err := api.Update(context.TODO(), ns); err != nil {
-		log.Error(err, fmt.Sprintf("Could not add label %q to namespace %q", monitoringLabel, namespace))
+	if err := labelNamespace(namespace); err != nil {
 		return err
 	}
 
@@ -577,6 +594,79 @@ func installNetworkPolicies(instance *servingv1alpha1.KnativeServing) error {
 	}
 	if err := manifest.ApplyAll(); err != nil {
 		log.Error(err, "Unable to install Network Policies")
+		return err
+	}
+	return nil
+}
+
+func exposeMetricToServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
+	// namespace where knative-serving-operator has been installed
+	namespace, err := getNamespace()
+	if err != nil {
+		log.Info(fmt.Sprintf("empty %s because operator dont want to expose metric or running locally", knativeServingInstalledNamespace))
+		return nil
+	}
+
+	log.Info("exposing metric for installed knative version")
+	knativeVersion.WithLabelValues(version.Version, namespace, instance.GetName()).Set(float64(time.Now().Unix()))
+
+	// Get service knative-serving-operator in order to create service monitor
+	svcDetail := getSvcDetails(namespace)
+	if svcDetail == nil {
+		log.Info(fmt.Sprintf("service knative-serving-operator does not exist in %s namespace", namespace))
+		return nil
+	}
+
+	// Add label openshift.io/cluster-monitoring to namespace
+	if err = labelNamespace(namespace); err != nil {
+		return err
+	}
+
+	// CreateServiceMonitors creates ServiceMonitors objects based on Service objects.
+	if _, err := metric.CreateServiceMonitors(cfg, namespace, []*v1.Service{svcDetail}); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			log.Info(fmt.Sprintf("ServiceMonitor already exist for %s service", svcDetail.Name))
+			return nil
+		}
+		log.Error(err, "Unable to create ServiceMonitor")
+		return err
+	}
+	log.Info("successfully created ServiceMonitor")
+	return nil
+}
+
+func getSvcDetails(ns string) *corev1.Service {
+	svc := &corev1.ServiceList{}
+	if err := api.List(context.TODO(), &client.ListOptions{Namespace: ns}, svc); err != nil {
+		return nil
+	}
+	for i := range svc.Items {
+		if svc.Items[i].Name == "knative-serving-operator" {
+			return &svc.Items[i]
+		}
+	}
+	return nil
+}
+
+func getNamespace() (string, error) {
+	ns, found := os.LookupEnv(knativeServingInstalledNamespace)
+	if !found {
+		return "", fmt.Errorf("%s must be set", knativeServingInstalledNamespace)
+	}
+	return ns, nil
+}
+
+func labelNamespace(namespace string) error {
+	ns := &corev1.Namespace{}
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
+		return err
+	}
+	if len(ns.Labels) == 0 {
+		ns.Labels = map[string]string{}
+	}
+	ns.Labels[monitoringLabel] = "true"
+	if err := api.Update(context.TODO(), ns); err != nil {
+		log.Error(err, fmt.Sprintf("could not add label %q to namespace %q", monitoringLabel, namespace))
 		return err
 	}
 	return nil
