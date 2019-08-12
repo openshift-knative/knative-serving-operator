@@ -58,7 +58,7 @@ var (
 )
 
 // Configure OpenShift if we're soaking in it
-func Configure(c client.Client, s *runtime.Scheme) (*common.Extension, error) {
+func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*common.Extension, error) {
 	if routeExists, err := anyKindExists(c, "", schema.GroupVersionKind{"route.openshift.io", "v1", "route"}); err != nil {
 		return nil, err
 	} else if !routeExists {
@@ -81,6 +81,16 @@ func Configure(c client.Client, s *runtime.Scheme) (*common.Extension, error) {
 		log.Error(err, "Unable to register apiservice scheme")
 		return nil, err
 	}
+
+	var filtered []unstructured.Unstructured
+	for _, u := range manifest.Resources {
+		if u.GetKind() == "APIService" && u.GetName() == "v1beta1.custom.metrics.k8s.io" {
+			log.Info("Dropping APIService for v1beta1.custom.metrics.k8s.io")
+			continue
+		}
+		filtered = append(filtered, u)
+	}
+	manifest.Resources = filtered
 
 	api = c
 	scheme = s

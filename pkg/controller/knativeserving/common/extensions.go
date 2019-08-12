@@ -11,7 +11,7 @@ import (
 
 var log = logf.Log.WithName("common")
 
-type Platforms []func(client.Client, *runtime.Scheme) (*Extension, error)
+type Platforms []func(client.Client, *runtime.Scheme, *mf.Manifest) (*Extension, error)
 type Extender func(*servingv1alpha1.KnativeServing) error
 type Extensions []Extension
 type Extension struct {
@@ -20,9 +20,9 @@ type Extension struct {
 	PostInstalls []Extender
 }
 
-func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme) (result Extensions, err error) {
+func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manifest *mf.Manifest) (result Extensions, err error) {
 	for _, fn := range platforms {
-		ext, err := fn(c, scheme)
+		ext, err := fn(c, scheme, manifest)
 		if err != nil {
 			return result, err
 		}

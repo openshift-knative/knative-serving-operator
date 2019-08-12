@@ -22,7 +22,7 @@ var (
 )
 
 // Configure minikube if we're soaking in it
-func Configure(c client.Client, _ *runtime.Scheme) (*common.Extension, error) {
+func Configure(c client.Client, _ *runtime.Scheme, _ *mf.Manifest) (*common.Extension, error) {
 	node := &v1.Node{}
 	if err := c.Get(context.TODO(), types.NamespacedName{Name: "minikube"}, node); err != nil {
 		if !errors.IsNotFound(err) {
