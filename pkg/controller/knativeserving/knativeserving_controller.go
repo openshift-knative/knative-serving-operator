@@ -168,7 +168,7 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 	}
 	defer r.updateStatus(instance)
 
-	extensions, err := platforms.Extend(r.client, r.scheme)
+	extensions, err := platforms.Extend(r.client, r.scheme, &r.config)
 	if err != nil {
 		return err
 	}
