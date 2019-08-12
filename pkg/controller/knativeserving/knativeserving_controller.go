@@ -173,6 +173,20 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 		return err
 	}
 
+	var filtered []unstructured.Unstructured
+	for _, resource := range r.config.Resources {
+		keep := true
+		for _, filter := range extensions.Filter(instance) {
+			if !filter(&resource) {
+				keep = false
+			}
+		}
+		if keep {
+			filtered = append(filtered, resource)
+		}
+	}
+	r.config.Resources = filtered
+
 	err = r.config.Transform(extensions.Transform(instance)...)
 	if err == nil {
 		err = extensions.PreInstall(instance)

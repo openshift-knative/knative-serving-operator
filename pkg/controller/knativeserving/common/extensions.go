@@ -13,9 +13,11 @@ var log = logf.Log.WithName("common")
 
 type Platforms []func(client.Client, *runtime.Scheme) (*Extension, error)
 type Extender func(*servingv1alpha1.KnativeServing) error
+type Filter func(*unstructured.Unstructured) bool
 type Extensions []Extension
 type Extension struct {
 	Transformers []mf.Transformer
+	Filters      []Filter
 	PreInstalls  []Extender
 	PostInstalls []Extender
 }
@@ -50,6 +52,14 @@ func (exts Extensions) Transform(instance *servingv1alpha1.KnativeServing) []mf.
 		}
 		return nil
 	})
+}
+
+func (exts Extensions) Filter(instance *servingv1alpha1.KnativeServing) []Filter {
+	var result []Filter
+	for _, extension := range exts {
+		result = append(result, extension.Filters...)
+	}
+	return result
 }
 
 func (exts Extensions) PreInstall(instance *servingv1alpha1.KnativeServing) error {

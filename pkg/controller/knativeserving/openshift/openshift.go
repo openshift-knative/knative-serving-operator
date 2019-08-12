@@ -51,6 +51,7 @@ var (
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
 		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
+		Filters:      []common.Filter{dropApiservice},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -225,7 +226,14 @@ func addCaBundleToApiservice(u *unstructured.Unstructured) error {
 		}
 	}
 	return nil
+}
 
+func dropApiservice(u *unstructured.Unstructured) bool {
+	if u.GetKind() == "APIService" && u.GetName() == "v1beta1.custom.metrics.k8s.io" {
+		log.Info("Dropping APIService for v1beta1.custom.metrics.k8s.io")
+		return false
+	}
+	return true
 }
 
 func installMaistra(c client.Client) error {
