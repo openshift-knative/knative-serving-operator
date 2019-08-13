@@ -572,11 +572,11 @@ func installNetworkPolicies(instance *servingv1alpha1.KnativeServing) error {
 		transforms = append(transforms, mf.InjectNamespace(namespace))
 	}
 	if err := manifest.Transform(transforms...); err != nil {
-		log.Error(err, "Unable to transform service monitor manifest")
+		log.Error(err, "Unable to transform network policy manifest")
 		return err
 	}
 	if err := manifest.ApplyAll(); err != nil {
-		log.Error(err, "Unable to install ServiceMonitor")
+		log.Error(err, "Unable to install Network Policies")
 		return err
 	}
 	return nil
