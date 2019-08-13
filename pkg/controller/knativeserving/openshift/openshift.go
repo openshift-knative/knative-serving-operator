@@ -28,28 +28,16 @@ import (
 )
 
 const (
-	maistraOperatorNamespace     = "istio-operator"
-	maistraControlPlaneNamespace = "istio-system"
-	caBundleConfigMapName        = "config-service-ca"
-
-	// The SA are added to priviledged for injection of istio-proxy https://maistra.io/docs/getting_started/application-requirements/
-	// Relaxing security constraints is only necessary during the OpenShift Service Mesh Technology Preview phase (as per the docs).
-	serviceAccountName = "system:serviceaccount:knative-serving:controller"
-	// The SA are added to anyuid user to give permission to cluster-local-gateway
-	saNameForClusterLocalGateway = "system:serviceaccount:istio-system:cluster-local-gateway-service-account"
+	caBundleConfigMapName = "config-service-ca"
 
 	// The secret in which the tls certificate for the autoscaler will be written.
 	autoscalerTlsSecretName = "autoscaler-adapter-tls"
 )
 
 var (
-	sccNames = map[string]string{
-		"privileged": serviceAccountName,
-		"anyuid":     saNameForClusterLocalGateway,
-	}
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
-		PreInstalls:  []common.Extender{addUsersToSCCs, installNetworkPolicies, ensureMaistra, caBundleConfigMap},
+		PreInstalls:  []common.Extender{installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
 	}
 	log    = logf.Log.WithName("openshift")
@@ -97,49 +85,6 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*comm
 	return &extension, nil
 }
 
-// ensureMaistra ensures Maistra is installed in the cluster
-func ensureMaistra(instance *servingv1alpha1.KnativeServing) error {
-	namespace := instance.GetNamespace()
-
-	log.Info("Ensuring Istio is installed in OpenShift")
-
-	if operatorExists, err := maistraOperatorExists(namespace); err != nil {
-		return err
-	} else if !operatorExists {
-		if istioExists, err := istioExists(namespace); err != nil {
-			return err
-		} else if istioExists {
-			log.Info("Maistra Operator not present but Istio CRDs already installed - assuming Istio is already setup")
-			return nil
-		}
-		// Maistra not installed
-		if err := installMaistra(api); err != nil {
-			return err
-		}
-	} else {
-		log.Info("Maistra already installed")
-	}
-
-	return nil
-}
-
-func maistraOperatorExists(namespace string) (bool, error) {
-	return anyKindExists(api, namespace,
-		// Maistra >0.10
-		schema.GroupVersionKind{Group: "maistra.io", Version: "v1", Kind: "servicemeshcontrolplane"},
-		// Maistra 0.10
-		schema.GroupVersionKind{Group: "istio.openshift.com", Version: "v1alpha3", Kind: "controlplane"},
-		// Maistra <0.10
-		schema.GroupVersionKind{Group: "istio.openshift.com", Version: "v1alpha1", Kind: "installation"},
-	)
-}
-
-func istioExists(namespace string) (bool, error) {
-	return anyKindExists(api, namespace,
-		schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "virtualservice"},
-	)
-}
-
 func serviceMonitorExists(namespace string) (bool, error) {
 	return anyKindExists(api, namespace,
 		schema.GroupVersionKind{Group: "monitoring.coreos.com", Version: "v1", Kind: "servicemonitor"},
@@ -160,7 +105,7 @@ func ensureOpenshiftIngress(instance *servingv1alpha1.KnativeServing) error {
 			err = manifest.ApplyAll()
 		}
 		if err != nil {
-			log.Error(err, "Unable to install Maistra operator")
+			log.Error(err, "Unable to install Knative OpenShift Ingress operator")
 			return err
 		}
 	} else {
@@ -238,60 +183,6 @@ func addCaBundleToApiservice(u *unstructured.Unstructured) error {
 
 }
 
-func installMaistra(c client.Client) error {
-	if err := installMaistraOperator(api); err != nil {
-		return err
-	}
-	if err := installMaistraControlPlane(api); err != nil {
-		return err
-	}
-	return nil
-}
-
-func installMaistraOperator(c client.Client) error {
-	const path = "deploy/resources/maistra/maistra-operator-0.10.yaml"
-	log.Info("Installing Maistra operator")
-	if manifest, err := mf.NewManifest(path, false, c); err == nil {
-		if err = ensureNamespace(c, maistraOperatorNamespace); err != nil {
-			log.Error(err, "Unable to create Maistra operator namespace", "namespace", maistraOperatorNamespace)
-			return err
-		}
-		if err = manifest.Transform(mf.InjectNamespace(maistraOperatorNamespace)); err == nil {
-			err = manifest.ApplyAll()
-		}
-		if err != nil {
-			log.Error(err, "Unable to install Maistra operator")
-			return err
-		}
-	} else {
-		log.Error(err, "Unable to create Maistra operator install manifest")
-		return err
-	}
-	return nil
-}
-
-func installMaistraControlPlane(c client.Client) error {
-	const path = "deploy/resources/maistra/maistra-controlplane-0.10.0.yaml"
-	log.Info("Installing Maistra ControlPlane")
-	if manifest, err := mf.NewManifest(path, false, c); err == nil {
-		if err = ensureNamespace(c, maistraControlPlaneNamespace); err != nil {
-			log.Error(err, "Unable to create Maistra ControlPlane namespace", "namespace", maistraControlPlaneNamespace)
-			return err
-		}
-		if err = manifest.Transform(mf.InjectNamespace(maistraControlPlaneNamespace)); err == nil {
-			err = manifest.ApplyAll()
-		}
-		if err != nil {
-			log.Error(err, "Unable to install Maistra ControlPlane")
-			return err
-		}
-	} else {
-		log.Error(err, "Unable to create Maistra ControlPlane manifest")
-		return err
-	}
-	return nil
-}
-
 func ingress(u *unstructured.Unstructured) error {
 	if u.GetKind() == "ConfigMap" && u.GetName() == "config-domain" {
 		ingressConfig := &configv1.Ingress{}
@@ -325,48 +216,6 @@ func egress(u *unstructured.Unstructured) error {
 			common.UpdateConfigMap(u, data, log)
 		}
 	}
-	return nil
-}
-
-func addUsersToSCCs(instance *servingv1alpha1.KnativeServing) error {
-	for sccName, user := range sccNames {
-		if err := addToSCC(sccName, user); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func addToSCC(sccName, user string) error {
-	scc := &unstructured.Unstructured{}
-	scc.SetAPIVersion("security.openshift.io/v1")
-	scc.SetKind("SecurityContextConstraints")
-
-	err := api.Get(context.TODO(), client.ObjectKey{Name: sccName}, scc)
-	if err != nil {
-		return err
-	}
-
-	// Verify if SA has already been assigned to the SCC
-	existing, exists, _ := unstructured.NestedStringSlice(scc.UnstructuredContent(), "users")
-	if exists {
-		for _, e := range existing {
-			if e == user {
-				return nil
-			}
-		}
-		existing = append(existing, user)
-	}
-
-	err = unstructured.SetNestedStringSlice(scc.UnstructuredContent(), existing, "users")
-	if err != nil {
-		return err
-	}
-	err = api.Update(context.TODO(), scc)
-	if err != nil {
-		return err
-	}
-	log.Info(fmt.Sprintf("Added ServiceAccount %q to SecurityContextConstraints %q", user, sccName))
 	return nil
 }
 
@@ -450,28 +299,6 @@ func anyKindExists(c client.Client, namespace string, gvks ...schema.GroupVersio
 		}
 	}
 	return false, nil
-}
-
-func itemsExist(c client.Client, kind string, apiVersion string, namespace string) (bool, error) {
-	list := &unstructured.UnstructuredList{}
-	list.SetKind(kind)
-	list.SetAPIVersion(apiVersion)
-	if err := c.List(context.TODO(), &client.ListOptions{Namespace: namespace}, list); err != nil {
-		return false, err
-	}
-	return len(list.Items) > 0, nil
-}
-
-func ensureNamespace(c client.Client, ns string) error {
-	namespace := &v1.Namespace{}
-	namespace.Name = ns
-	if err := c.Create(context.TODO(), namespace); err != nil {
-		if errors.IsAlreadyExists(err) {
-			return nil
-		}
-		return err
-	}
-	return nil
 }
 
 // annotateAutoscalerService annotates the autoscaler service with an Openshift annotation
