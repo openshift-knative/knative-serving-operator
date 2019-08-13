@@ -94,7 +94,7 @@ func (r *ReconcileKnativeServing) InjectClient(c client.Client) error {
 		return err
 	}
 	r.config = m
-	return r.ensureKnativeServing()
+	return nil
 }
 
 // Reconcile reads that state of the cluster for a KnativeServing object and makes changes based on the state read
@@ -273,28 +273,6 @@ func (r *ReconcileKnativeServing) ignore(instance *servingv1alpha1.KnativeServin
 		msg := fmt.Sprintf("The only KnativeServing resource that matters is %s/%s", operand, operand)
 		instance.Status.MarkIgnored(msg)
 		err = r.updateStatus(instance)
-	}
-	return
-}
-
-// If we can't find knative-serving/knative-serving, create it
-func (r *ReconcileKnativeServing) ensureKnativeServing() (err error) {
-	const path = "deploy/crds/serving_v1alpha1_knativeserving_cr.yaml"
-	instance := &servingv1alpha1.KnativeServing{}
-	key := client.ObjectKey{Namespace: operand, Name: operand}
-	if err = r.client.Get(context.TODO(), key, instance); err != nil {
-		var manifest mf.Manifest
-		manifest, err = mf.NewManifest(path, false, r.client)
-		if err == nil {
-			// create namespace
-			err = manifest.Apply(&r.config.Resources[0])
-		}
-		if err == nil {
-			err = manifest.Transform(mf.InjectNamespace(operand))
-		}
-		if err == nil {
-			err = manifest.ApplyAll()
-		}
 	}
 	return
 }
