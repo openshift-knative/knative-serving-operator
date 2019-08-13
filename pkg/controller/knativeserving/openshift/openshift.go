@@ -49,7 +49,7 @@ var (
 	}
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
-		PreInstalls:  []common.Extender{addUsersToSCCs, ensureMaistra, caBundleConfigMap},
+		PreInstalls:  []common.Extender{addUsersToSCCs, installNetworkPolicies, ensureMaistra, caBundleConfigMap},
 		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
 	}
 	log    = logf.Log.WithName("openshift")
@@ -553,6 +553,31 @@ func configureLogURLTemplate(u *unstructured.Unstructured) error {
 				common.UpdateConfigMap(u, data, log)
 			}
 		}
+	}
+	return nil
+}
+
+func installNetworkPolicies(instance *servingv1alpha1.KnativeServing) error {
+	namespace := instance.GetNamespace()
+	log.Info("Installing Network Policies")
+	const path = "deploy/resources/network/network_policies.yaml"
+
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create Network Policy install manifest")
+		return err
+	}
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(namespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(namespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform service monitor manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to install ServiceMonitor")
+		return err
 	}
 	return nil
 }
