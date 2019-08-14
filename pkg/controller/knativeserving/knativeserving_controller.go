@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -124,6 +125,7 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 
 	stages := []func(*servingv1alpha1.KnativeServing) error{
 		r.initStatus,
+		r.checkDependencies,
 		r.install,
 		r.checkDeployments,
 		r.deleteObsoleteResources,
@@ -225,6 +227,25 @@ func (r *ReconcileKnativeServing) checkDeployments(instance *servingv1alpha1.Kna
 	}
 	log.Info("All deployments are available")
 	instance.Status.MarkDeploymentsAvailable()
+	return nil
+}
+
+// Check for all dependencies
+func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.KnativeServing) error {
+	defer r.updateStatus(instance)
+
+	istio := schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "virtualservice"}
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(istio)
+	if err := r.client.List(context.TODO(), nil, list); err != nil {
+		msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
+		instance.Status.MarkDependencyMissing(msg)
+		log.Error(err, msg)
+		return err
+	}
+
+	log.Info("All dependencies are installed")
+	instance.Status.MarkDependenciesInstalled()
 	return nil
 }
 

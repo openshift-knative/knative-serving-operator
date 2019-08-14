@@ -5,6 +5,7 @@ import (
 )
 
 var conditions = apis.NewLivingConditionSet(
+	DependenciesInstalled,
 	DeploymentsAvailable,
 	InstallSucceeded,
 )
@@ -70,4 +71,15 @@ func (is *KnativeServingStatus) MarkDeploymentsNotReady() {
 		DeploymentsAvailable,
 		"NotReady",
 		"Waiting on deployments")
+}
+
+func (is *KnativeServingStatus) MarkDependenciesInstalled() {
+	conditions.Manage(is).MarkTrue(DependenciesInstalled)
+}
+
+func (is *KnativeServingStatus) MarkDependencyMissing(msg string) {
+	conditions.Manage(is).MarkFalse(
+		DependenciesInstalled,
+		"Error",
+		"Dependency missing: %s", msg)
 }
