@@ -20,6 +20,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
+	rbac "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,7 +58,7 @@ var (
 	knativeVersion = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "knative_serving_version",
 		Help: "Installed knative serving version info",
-	}, []string{"version", "namespace", "component"})
+	}, []string{"version", "namespace"})
 
 	sccNames = map[string]string{
 		"privileged": serviceAccountName,
@@ -208,7 +209,7 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	}
 
 	// Add label openshift.io/cluster-monitoring to namespace
-	if err := labelNamespace(namespace); err != nil {
+	if err := addMonitoringLabelToNamespace(namespace); err != nil {
 		return err
 	}
 
@@ -600,25 +601,28 @@ func installNetworkPolicies(instance *servingv1alpha1.KnativeServing) error {
 }
 
 func exposeMetricToServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
-	// namespace where knative-serving-operator has been installed
-	namespace, err := getNamespace()
+	// getOperatorNamespace return namespace where knative-serving-operator has been installed
+	namespace, err := getOperatorNamespace()
 	if err != nil {
 		log.Info(fmt.Sprintf("empty %s because operator dont want to expose metric or running locally", knativeServingInstalledNamespace))
 		return nil
 	}
 
 	log.Info("exposing metric for installed knative version")
-	knativeVersion.WithLabelValues(version.Version, namespace, instance.GetName()).Set(float64(time.Now().Unix()))
+	knativeVersion.WithLabelValues(version.Version, namespace).Set(float64(time.Now().Unix()))
 
 	// Get service knative-serving-operator in order to create service monitor
-	svcDetail := getSvcDetails(namespace)
-	if svcDetail == nil {
-		log.Info(fmt.Sprintf("service knative-serving-operator does not exist in %s namespace", namespace))
-		return nil
+	svcDetail, err := getOperatorService(namespace)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			log.Info(fmt.Sprintf("service knative-serving-operator does not exist in %s namespace", namespace))
+			return nil
+		}
+		return err
 	}
 
 	// Add label openshift.io/cluster-monitoring to namespace
-	if err = labelNamespace(namespace); err != nil {
+	if err = addMonitoringLabelToNamespace(namespace); err != nil {
 		return err
 	}
 
@@ -628,27 +632,29 @@ func exposeMetricToServiceMonitor(instance *servingv1alpha1.KnativeServing) erro
 			log.Info(fmt.Sprintf("ServiceMonitor already exist for %s service", svcDetail.Name))
 			return nil
 		}
-		log.Error(err, "Unable to create ServiceMonitor")
+		log.Error(err, "failed to create ServiceMonitor so removing added label from namespace")
+		if err = removeMonitoringLabelFromNamespace(namespace); err != nil {
+			return err
+		}
 		return err
 	}
 	log.Info("successfully created ServiceMonitor")
-	return nil
-}
-
-func getSvcDetails(ns string) *corev1.Service {
-	svc := &corev1.ServiceList{}
-	if err := api.List(context.TODO(), &client.ListOptions{Namespace: ns}, svc); err != nil {
-		return nil
+	if err = createRole(namespace); err != nil {
+		return err
 	}
-	for i := range svc.Items {
-		if svc.Items[i].Name == "knative-serving-operator" {
-			return &svc.Items[i]
-		}
+	if err = createRoleBinding(namespace); err != nil {
+		return err
 	}
 	return nil
 }
 
-func getNamespace() (string, error) {
+func getOperatorService(ns string) (*corev1.Service, error) {
+	svc := &corev1.Service{}
+	err := api.Get(context.TODO(), types.NamespacedName{Name: "knative-serving-operator", Namespace: ns}, svc)
+	return svc, err
+}
+
+func getOperatorNamespace() (string, error) {
 	ns, found := os.LookupEnv(knativeServingInstalledNamespace)
 	if !found {
 		return "", fmt.Errorf("%s must be set", knativeServingInstalledNamespace)
@@ -656,7 +662,7 @@ func getNamespace() (string, error) {
 	return ns, nil
 }
 
-func labelNamespace(namespace string) error {
+func addMonitoringLabelToNamespace(namespace string) error {
 	ns := &corev1.Namespace{}
 	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
 		return err
@@ -670,4 +676,60 @@ func labelNamespace(namespace string) error {
 		return err
 	}
 	return nil
+}
+
+func removeMonitoringLabelFromNamespace(namespace string) error {
+	ns := &corev1.Namespace{}
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
+		return err
+	}
+	if len(ns.Labels) == 0 {
+		return nil
+	}
+	if _, ok := ns.Labels[monitoringLabel]; ok {
+		delete(ns.Labels, monitoringLabel)
+	}
+	if err := api.Update(context.TODO(), ns); err != nil {
+		log.Error(err, fmt.Sprintf("could not remove label %q from namespace %q", monitoringLabel, namespace))
+		return err
+	}
+	return nil
+}
+
+func createRole(ns string) error {
+	role := &rbac.Role{}
+	role.Name = "prometheus-k8s"
+	role.APIVersion = "rbac.authorization.k8s.io/v1"
+	role.Kind = "Role"
+	role.Namespace = ns
+	rules := rbac.PolicyRule{
+		APIGroups: []string{""},
+		Resources: []string{"services", "endpoints", "pods"},
+		Verbs:     []string{"get", "list", "watch"},
+	}
+	role.Rules = append(role.Rules, rules)
+	err := api.Create(context.TODO(), role)
+	return err
+}
+
+func createRoleBinding(ns string) error {
+	roleBinding := &rbac.RoleBinding{}
+	roleRef := rbac.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "Role",
+		Name:     "prometheus-k8s",
+	}
+	subjects := rbac.Subject{
+		Kind:      "ServiceAccount",
+		Name:      "prometheus-k8s",
+		Namespace: "openshift-monitoring",
+	}
+	roleBinding.APIVersion = "rbac.authorization.k8s.io/v1"
+	roleBinding.Kind = "RoleBinding"
+	roleBinding.Name = "prometheus-k8s"
+	roleBinding.Namespace = ns
+	roleBinding.RoleRef = roleRef
+	roleBinding.Subjects = append(roleBinding.Subjects, subjects)
+	err := api.Create(context.TODO(), roleBinding)
+	return err
 }
