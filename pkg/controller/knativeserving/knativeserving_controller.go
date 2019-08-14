@@ -238,7 +238,7 @@ func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.Kn
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(istio)
 	if err := r.client.List(context.TODO(), nil, list); err != nil {
-		msg := fmt.Sprintf("Istio not detected")
+		msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
 		instance.Status.MarkDependencyMissing(msg)
 		log.Error(err, msg)
 		return err
