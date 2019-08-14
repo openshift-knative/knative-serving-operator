@@ -95,7 +95,7 @@ spec:
                       fieldPath: metadata.name
                 - name: OPERATOR_NAME
                   value: knative-serving-operator
-                image: quay.io/openshift-knative/knative-serving-operator:v0.7.1
+                image: quay.io/openshift-knative/knative-serving-operator:v0.7.1-TP1-01
                 args:
                   - --filename=https://raw.githubusercontent.com/openshift/knative-serving/release-v0.7.1/openshift/release/knative-serving-v0.7.1.yaml
                 imagePullPolicy: Always
