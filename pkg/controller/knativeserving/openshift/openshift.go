@@ -38,7 +38,7 @@ var (
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{installNetworkPolicies, caBundleConfigMap},
-		PostInstalls: []common.Extender{ensureOpenshiftIngress, installServiceMonitor},
+		PostInstalls: []common.Extender{installServiceMonitor},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -89,30 +89,6 @@ func serviceMonitorExists(namespace string) (bool, error) {
 	return anyKindExists(api, namespace,
 		schema.GroupVersionKind{Group: "monitoring.coreos.com", Version: "v1", Kind: "servicemonitor"},
 	)
-}
-
-// ensureOpenshiftIngress ensures knative-openshift-ingress operator is installed
-func ensureOpenshiftIngress(instance *servingv1alpha1.KnativeServing) error {
-	namespace := instance.GetNamespace()
-	const path = "deploy/resources/openshift-ingress/openshift-ingress-0.0.6.yaml"
-	log.Info("Ensuring Knative OpenShift Ingress operator is installed")
-	if manifest, err := mf.NewManifest(path, false, api); err == nil {
-		transforms := []mf.Transformer{mf.InjectOwner(instance)}
-		if len(namespace) > 0 {
-			transforms = append(transforms, mf.InjectNamespace(namespace))
-		}
-		if err = manifest.Transform(transforms...); err == nil {
-			err = manifest.ApplyAll()
-		}
-		if err != nil {
-			log.Error(err, "Unable to install Knative OpenShift Ingress operator")
-			return err
-		}
-	} else {
-		log.Error(err, "Unable to create Knative OpenShift Ingress operator install manifest")
-		return err
-	}
-	return nil
 }
 
 func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
