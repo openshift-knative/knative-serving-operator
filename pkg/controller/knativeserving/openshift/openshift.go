@@ -18,7 +18,6 @@ import (
 	metric "github.com/operator-framework/operator-sdk/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -604,7 +603,7 @@ func exposeMetricToServiceMonitor(instance *servingv1alpha1.KnativeServing) erro
 	// getOperatorNamespace return namespace where knative-serving-operator has been installed
 	namespace, err := getOperatorNamespace()
 	if err != nil {
-		log.Info(fmt.Sprintf("empty %s because operator dont want to expose metric or running locally", knativeServingInstalledNamespace))
+		log.Info("no namespace defined, skipping ServiceMonitor installation for the operator")
 		return nil
 	}
 
@@ -614,7 +613,7 @@ func exposeMetricToServiceMonitor(instance *servingv1alpha1.KnativeServing) erro
 	// Get service knative-serving-operator in order to create service monitor
 	svcDetail, err := getOperatorService(namespace)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.IsNotFound(err) {
 			log.Info(fmt.Sprintf("service knative-serving-operator does not exist in %s namespace", namespace))
 			return nil
 		}
@@ -628,28 +627,25 @@ func exposeMetricToServiceMonitor(instance *servingv1alpha1.KnativeServing) erro
 
 	// CreateServiceMonitors creates ServiceMonitors objects based on Service objects.
 	if _, err := metric.CreateServiceMonitors(cfg, namespace, []*v1.Service{svcDetail}); err != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if errors.IsAlreadyExists(err) {
 			log.Info(fmt.Sprintf("ServiceMonitor already exist for %s service", svcDetail.Name))
 			return nil
 		}
-		log.Error(err, "failed to create ServiceMonitor so removing added label from namespace")
-		if err = removeMonitoringLabelFromNamespace(namespace); err != nil {
-			return err
-		}
+		log.Error(err, "failed to create ServiceMonitor")
 		return err
 	}
 	log.Info("successfully created ServiceMonitor")
-	if err = createRole(namespace); err != nil {
+	if err = createRoleForServiceMonitor(namespace); err != nil {
 		return err
 	}
-	if err = createRoleBinding(namespace); err != nil {
+	if err = createRoleBindingForServiceMonitor(namespace); err != nil {
 		return err
 	}
 	return nil
 }
 
-func getOperatorService(ns string) (*corev1.Service, error) {
-	svc := &corev1.Service{}
+func getOperatorService(ns string) (*v1.Service, error) {
+	svc := &v1.Service{}
 	err := api.Get(context.TODO(), types.NamespacedName{Name: "knative-serving-operator", Namespace: ns}, svc)
 	return svc, err
 }
@@ -663,11 +659,11 @@ func getOperatorNamespace() (string, error) {
 }
 
 func addMonitoringLabelToNamespace(namespace string) error {
-	ns := &corev1.Namespace{}
+	ns := &v1.Namespace{}
 	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
 		return err
 	}
-	if len(ns.Labels) == 0 {
+	if ns.Labels == nil {
 		ns.Labels = map[string]string{}
 	}
 	ns.Labels[monitoringLabel] = "true"
@@ -678,58 +674,45 @@ func addMonitoringLabelToNamespace(namespace string) error {
 	return nil
 }
 
-func removeMonitoringLabelFromNamespace(namespace string) error {
-	ns := &corev1.Namespace{}
-	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
-		return err
+func createRoleForServiceMonitor(ns string) error {
+	role := &rbac.Role{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Role",
+			APIVersion: "rbac.authorization.k8s.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "prometheus-k8s",
+			Namespace: ns,
+		},
+		Rules: []rbac.PolicyRule{{
+			APIGroups: []string{""},
+			Resources: []string{"services", "endpoints", "pods"},
+			Verbs:     []string{"get", "list", "watch"},
+		}},
 	}
-	if len(ns.Labels) == 0 {
-		return nil
-	}
-	if _, ok := ns.Labels[monitoringLabel]; ok {
-		delete(ns.Labels, monitoringLabel)
-	}
-	if err := api.Update(context.TODO(), ns); err != nil {
-		log.Error(err, fmt.Sprintf("could not remove label %q from namespace %q", monitoringLabel, namespace))
-		return err
-	}
-	return nil
+	return api.Create(context.TODO(), role)
 }
 
-func createRole(ns string) error {
-	role := &rbac.Role{}
-	role.Name = "prometheus-k8s"
-	role.APIVersion = "rbac.authorization.k8s.io/v1"
-	role.Kind = "Role"
-	role.Namespace = ns
-	rules := rbac.PolicyRule{
-		APIGroups: []string{""},
-		Resources: []string{"services", "endpoints", "pods"},
-		Verbs:     []string{"get", "list", "watch"},
+func createRoleBindingForServiceMonitor(ns string) error {
+	roleBinding := &rbac.RoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "RoleBinding",
+			APIVersion: "rbac.authorization.k8s.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "prometheus-k8s",
+			Namespace: ns,
+		},
+		Subjects: []rbac.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      "prometheus-k8s",
+			Namespace: "openshift-monitoring",
+		}},
+		RoleRef: rbac.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "prometheus-k8s",
+		},
 	}
-	role.Rules = append(role.Rules, rules)
-	err := api.Create(context.TODO(), role)
-	return err
-}
-
-func createRoleBinding(ns string) error {
-	roleBinding := &rbac.RoleBinding{}
-	roleRef := rbac.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "Role",
-		Name:     "prometheus-k8s",
-	}
-	subjects := rbac.Subject{
-		Kind:      "ServiceAccount",
-		Name:      "prometheus-k8s",
-		Namespace: "openshift-monitoring",
-	}
-	roleBinding.APIVersion = "rbac.authorization.k8s.io/v1"
-	roleBinding.Kind = "RoleBinding"
-	roleBinding.Name = "prometheus-k8s"
-	roleBinding.Namespace = ns
-	roleBinding.RoleRef = roleRef
-	roleBinding.Subjects = append(roleBinding.Subjects, subjects)
-	err := api.Create(context.TODO(), roleBinding)
-	return err
+	return api.Create(context.TODO(), roleBinding)
 }
