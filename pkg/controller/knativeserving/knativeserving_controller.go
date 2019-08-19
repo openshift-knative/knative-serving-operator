@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -48,7 +47,7 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileKnativeServing{client: mgr.GetClient(), scheme: mgr.GetScheme(), cfg: mgr.GetConfig()}
+	return &ReconcileKnativeServing{client: mgr.GetClient(), scheme: mgr.GetScheme()}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -86,7 +85,6 @@ type ReconcileKnativeServing struct {
 	client client.Client
 	scheme *runtime.Scheme
 	config mf.Manifest
-	cfg    *rest.Config
 }
 
 // Create manifestival resources and KnativeServing, if necessary
@@ -170,7 +168,7 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 	}
 	defer r.updateStatus(instance)
 
-	extensions, err := platforms.Extend(r.client, r.scheme, &r.config, r.cfg)
+	extensions, err := platforms.Extend(r.client, r.scheme, &r.config)
 	if err != nil {
 		return err
 	}

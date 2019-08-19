@@ -15,11 +15,9 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	mf "github.com/jcrossley3/manifestival"
-	metric "github.com/operator-framework/operator-sdk/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	rbac "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -71,7 +68,6 @@ var (
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
 	scheme *runtime.Scheme
-	cfg    *rest.Config
 )
 
 func init() {
@@ -82,7 +78,7 @@ func init() {
 }
 
 // Configure OpenShift if we're soaking in it
-func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest, config *rest.Config) (*common.Extension, error) {
+func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*common.Extension, error) {
 	if routeExists, err := anyKindExists(c, "", schema.GroupVersionKind{"route.openshift.io", "v1", "route"}); err != nil {
 		return nil, err
 	} else if !routeExists {
@@ -118,7 +114,6 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest, config
 
 	api = c
 	scheme = s
-	cfg = config
 	return &extension, nil
 }
 
@@ -199,35 +194,7 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	namespace := instance.GetNamespace()
 	log.Info("Installing ServiceMonitor")
 	const path = "deploy/resources/monitoring/service_monitor.yaml"
-
-	if serviceMonitorExists, err := serviceMonitorExists(namespace); err != nil {
-		return err
-	} else if !serviceMonitorExists {
-		log.Info("ServiceMonitor CRD is not installed. Skip to install ServiceMonitor")
-		return nil
-	}
-
-	// Add label openshift.io/cluster-monitoring to namespace
-	if err := addMonitoringLabelToNamespace(namespace); err != nil {
-		return err
-	}
-
-	// Install ServiceMonitor
-	manifest, err := mf.NewManifest(path, false, api)
-	if err != nil {
-		log.Error(err, "Unable to create ServiceMonitor install manifest")
-		return err
-	}
-	transforms := []mf.Transformer{mf.InjectOwner(instance)}
-	if len(namespace) > 0 {
-		transforms = append(transforms, mf.InjectNamespace(namespace))
-	}
-	if err := manifest.Transform(transforms...); err != nil {
-		log.Error(err, "Unable to transform service monitor manifest")
-		return err
-	}
-	if err := manifest.ApplyAll(); err != nil {
-		log.Error(err, "Unable to install ServiceMonitor")
+	if err := createServiceMonitor(instance, namespace, path); err != nil {
 		return err
 	}
 	return nil
@@ -606,48 +573,15 @@ func exposeMetricToServiceMonitor(instance *servingv1alpha1.KnativeServing) erro
 		log.Info("no namespace defined, skipping ServiceMonitor installation for the operator")
 		return nil
 	}
-
 	log.Info("exposing metric for installed knative version")
 	knativeVersion.WithLabelValues(version.Version, namespace).Set(float64(time.Now().Unix()))
 
-	// Get service knative-serving-operator in order to create service monitor
-	svcDetail, err := getOperatorService(namespace)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			log.Info(fmt.Sprintf("service knative-serving-operator does not exist in %s namespace", namespace))
-			return nil
-		}
-		return err
-	}
-
-	// Add label openshift.io/cluster-monitoring to namespace
-	if err = addMonitoringLabelToNamespace(namespace); err != nil {
-		return err
-	}
-
-	// CreateServiceMonitors creates ServiceMonitors objects based on Service objects.
-	if _, err := metric.CreateServiceMonitors(cfg, namespace, []*v1.Service{svcDetail}); err != nil {
-		if errors.IsAlreadyExists(err) {
-			log.Info(fmt.Sprintf("ServiceMonitor already exist for %s service", svcDetail.Name))
-			return nil
-		}
-		log.Error(err, "failed to create ServiceMonitor")
-		return err
-	}
-	log.Info("successfully created ServiceMonitor")
-	if err = createRoleForServiceMonitor(namespace); err != nil {
-		return err
-	}
-	if err = createRoleBindingForServiceMonitor(namespace); err != nil {
+	log.Info("Installing Service Monitor for Operator")
+	const path = "deploy/resources/monitoring/operator_service_monitor.yaml"
+	if err := createServiceMonitor(instance, namespace, path); err != nil {
 		return err
 	}
 	return nil
-}
-
-func getOperatorService(ns string) (*v1.Service, error) {
-	svc := &v1.Service{}
-	err := api.Get(context.TODO(), types.NamespacedName{Name: "knative-serving-operator", Namespace: ns}, svc)
-	return svc, err
 }
 
 func getOperatorNamespace() (string, error) {
@@ -674,45 +608,34 @@ func addMonitoringLabelToNamespace(namespace string) error {
 	return nil
 }
 
-func createRoleForServiceMonitor(ns string) error {
-	role := &rbac.Role{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Role",
-			APIVersion: "rbac.authorization.k8s.io/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "prometheus-k8s",
-			Namespace: ns,
-		},
-		Rules: []rbac.PolicyRule{{
-			APIGroups: []string{""},
-			Resources: []string{"services", "endpoints", "pods"},
-			Verbs:     []string{"get", "list", "watch"},
-		}},
+func createServiceMonitor(instance *servingv1alpha1.KnativeServing, namespace, path string) error {
+	if serviceMonitorExists, err := serviceMonitorExists(namespace); err != nil {
+		return err
+	} else if !serviceMonitorExists {
+		log.Info("ServiceMonitor CRD is not installed. Skip to install ServiceMonitor")
+		return nil
 	}
-	return api.Create(context.TODO(), role)
-}
-
-func createRoleBindingForServiceMonitor(ns string) error {
-	roleBinding := &rbac.RoleBinding{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "RoleBinding",
-			APIVersion: "rbac.authorization.k8s.io/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "prometheus-k8s",
-			Namespace: ns,
-		},
-		Subjects: []rbac.Subject{{
-			Kind:      "ServiceAccount",
-			Name:      "prometheus-k8s",
-			Namespace: "openshift-monitoring",
-		}},
-		RoleRef: rbac.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     "prometheus-k8s",
-		},
+	// Add label openshift.io/cluster-monitoring to namespace
+	if err := addMonitoringLabelToNamespace(namespace); err != nil {
+		return err
 	}
-	return api.Create(context.TODO(), roleBinding)
+	// Install ServiceMonitor
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create ServiceMonitor install manifest")
+		return err
+	}
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(namespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(namespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform service monitor manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to install ServiceMonitor")
+		return err
+	}
+	return nil
 }

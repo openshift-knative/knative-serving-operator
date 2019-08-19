@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
@@ -23,7 +22,7 @@ var (
 )
 
 // Configure minikube if we're soaking in it
-func Configure(c client.Client, _ *runtime.Scheme, _ *mf.Manifest, _ *rest.Config) (*common.Extension, error) {
+func Configure(c client.Client, _ *runtime.Scheme, _ *mf.Manifest) (*common.Extension, error) {
 	node := &v1.Node{}
 	if err := c.Get(context.TODO(), types.NamespacedName{Name: "minikube"}, node); err != nil {
 		if !errors.IsNotFound(err) {
