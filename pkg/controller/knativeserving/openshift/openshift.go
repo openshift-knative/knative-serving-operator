@@ -6,16 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
-	"github.com/openshift-knative/knative-serving-operator/version"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	mf "github.com/jcrossley3/manifestival"
-	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -27,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
@@ -48,14 +44,10 @@ const (
 	knativeServingInstalledNamespace = "NAMESPACE"
 	// service monitor created successfully when monitoringLabel added to namespace
 	monitoringLabel = "openshift.io/cluster-monitoring"
+	rolePath        = "deploy/resources/monitoring/role_service_monitor.yaml"
 )
 
 var (
-	knativeVersion = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "knative_serving_version",
-		Help: "Installed knative serving version info",
-	}, []string{"version", "namespace"})
-
 	sccNames = map[string]string{
 		"privileged": serviceAccountName,
 		"anyuid":     saNameForClusterLocalGateway,
@@ -69,13 +61,6 @@ var (
 	api    client.Client
 	scheme *runtime.Scheme
 )
-
-func init() {
-	// Metrics have to be registered to expose:
-	metrics.Registry.MustRegister(
-		knativeVersion,
-	)
-}
 
 // Configure OpenShift if we're soaking in it
 func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*common.Extension, error) {
@@ -195,6 +180,10 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 	log.Info("Installing ServiceMonitor")
 	const path = "deploy/resources/monitoring/service_monitor.yaml"
 	if err := createServiceMonitor(instance, namespace, path); err != nil {
+		return err
+	}
+	log.Info("Installing role and roleBinding")
+	if err := createRoleAndRoleBinding(instance, namespace, rolePath); err != nil {
 		return err
 	}
 	return nil
@@ -573,12 +562,13 @@ func exposeMetricToServiceMonitor(instance *servingv1alpha1.KnativeServing) erro
 		log.Info("no namespace defined, skipping ServiceMonitor installation for the operator")
 		return nil
 	}
-	log.Info("exposing metric for installed knative version")
-	knativeVersion.WithLabelValues(version.Version, namespace).Set(float64(time.Now().Unix()))
-
 	log.Info("Installing Service Monitor for Operator")
 	const path = "deploy/resources/monitoring/operator_service_monitor.yaml"
 	if err := createServiceMonitor(instance, namespace, path); err != nil {
+		return err
+	}
+	log.Info("Installing role and roleBinding for Operator")
+	if err := createRoleAndRoleBinding(instance, namespace, rolePath); err != nil {
 		return err
 	}
 	return nil
@@ -630,11 +620,32 @@ func createServiceMonitor(instance *servingv1alpha1.KnativeServing, namespace, p
 		transforms = append(transforms, mf.InjectNamespace(namespace))
 	}
 	if err := manifest.Transform(transforms...); err != nil {
-		log.Error(err, "Unable to transform service monitor manifest")
+		log.Error(err, "Unable to transform serviceMonitor manifest")
 		return err
 	}
 	if err := manifest.ApplyAll(); err != nil {
 		log.Error(err, "Unable to install ServiceMonitor")
+		return err
+	}
+	return nil
+}
+
+func createRoleAndRoleBinding(instance *servingv1alpha1.KnativeServing, namespace, path string) error {
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create role and roleBinding ServiceMonitor install manifest")
+		return err
+	}
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(namespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(namespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform role and roleBinding serviceMonitor manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to create role and roleBinding for ServiceMonitor")
 		return err
 	}
 	return nil
