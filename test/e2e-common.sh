@@ -82,10 +82,7 @@ function install_serving_operator() {
   # Deploy the operator
   kubectl create ns knative-serving
   kubectl apply -f deploy/crds/serving_v1alpha1_knativeserving_crd.yaml
-  kubectl apply -n knative-serving -f deploy/
-
-  # Wait for the operator to be running
-  wait_until_pods_running knative-serving
+  kubectl apply -f deploy/
 
   # Install Knative Serving
   kubectl apply -n knative-serving -f deploy/crds/serving_v1alpha1_knativeserving_cr.yaml
