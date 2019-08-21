@@ -36,7 +36,6 @@ const (
 	knativeServingInstalledNamespace = "NAMESPACE"
 	// service monitor created successfully when monitoringLabel added to namespace
 	monitoringLabel = "openshift.io/cluster-monitoring"
-	rolePath        = "deploy/resources/monitoring/role_service_monitor.yaml"
 )
 
 var (
@@ -97,9 +96,13 @@ func serviceMonitorExists(namespace string) (bool, error) {
 }
 
 func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
+	const (
+		path         = "deploy/resources/monitoring/service_monitor.yaml"
+		operatroPath = "deploy/resources/monitoring/operator_service_monitor.yaml"
+		rolePath     = "deploy/resources/monitoring/role_service_monitor.yaml"
+	)
 	namespace := instance.GetNamespace()
 	log.Info("Installing ServiceMonitor")
-	const path = "deploy/resources/monitoring/service_monitor.yaml"
 	if err := createServiceMonitor(instance, namespace, path); err != nil {
 		return err
 	}
@@ -114,7 +117,6 @@ func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
 		return nil
 	}
 	log.Info("Installing ServiceMonitor for Operator")
-	const operatroPath = "deploy/resources/monitoring/operator_service_monitor.yaml"
 	if err := createServiceMonitor(instance, operatorNamespace, operatroPath); err != nil {
 		return err
 	}
