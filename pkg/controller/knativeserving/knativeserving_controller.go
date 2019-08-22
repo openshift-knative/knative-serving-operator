@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -124,7 +124,7 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	// Fetch the KnativeServing instance
 	instance := &servingv1alpha1.KnativeServing{}
 	if err := r.client.Get(context.TODO(), request.NamespacedName, instance); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			if isInteresting(request) {
 				r.config.DeleteAll()
 			}
@@ -179,9 +179,6 @@ func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.Knative
 
 // Apply the embedded resources
 func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServing) error {
-	if instance.Status.IsDeploying() {
-		return nil
-	}
 	defer r.updateStatus(instance)
 
 	extensions, err := platforms.Extend(r.client, r.scheme, &r.config)
@@ -235,7 +232,7 @@ func (r *ReconcileKnativeServing) checkDeployments(instance *servingv1alpha1.Kna
 			key := client.ObjectKey{Namespace: u.GetNamespace(), Name: u.GetName()}
 			if err := r.client.Get(context.TODO(), key, deployment); err != nil {
 				instance.Status.MarkDeploymentsNotReady()
-				if errors.IsNotFound(err) {
+				if apierrors.IsNotFound(err) {
 					return nil
 				}
 				return err

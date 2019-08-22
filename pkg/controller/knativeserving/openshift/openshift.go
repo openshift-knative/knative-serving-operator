@@ -2,6 +2,7 @@ package openshift
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,10 +13,11 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
+	"github.com/coreos/go-semver/semver"
 	mf "github.com/jcrossley3/manifestival"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -41,7 +43,7 @@ const (
 var (
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
-		PreInstalls:  []common.Extender{installNetworkPolicies, caBundleConfigMap},
+		PreInstalls:  []common.Extender{checkVersion, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
 	}
 	log    = logf.Log.WithName("openshift")
@@ -87,6 +89,36 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*comm
 	api = c
 	scheme = s
 	return &extension, nil
+}
+
+func checkVersion(instance *servingv1alpha1.KnativeServing) error {
+	minVersion := semver.New("4.1.13")
+
+	clusterVersion := &configv1.ClusterVersion{}
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: "version"}, clusterVersion); err != nil {
+		return err
+	}
+
+	current, err := semver.NewVersion(clusterVersion.Status.Desired.Version)
+	if err != nil {
+		log.Error(err, "could not parse version string")
+		return err
+	}
+
+	if strings.Contains(string(current.PreRelease), "ci") ||
+		strings.Contains(string(current.PreRelease), "nightly") {
+		log.Info("CI/Nightly version detected, bypassing version check")
+		return nil
+	}
+
+	if current.LessThan(*minVersion) {
+		msg := fmt.Sprintf("version constraint not fulfilled: minimum version: %s, current version: %s", minVersion.String(), current.String())
+		instance.Status.MarkDependencyMissing(msg)
+		log.Error(errors.New(msg), msg)
+		return nil
+	}
+	log.Info("version constraint fulfilled", "version", current.String())
+	return nil
 }
 
 func serviceMonitorExists(namespace string) (bool, error) {
@@ -230,7 +262,7 @@ func deploymentController(u *unstructured.Unstructured) error {
 func caBundleConfigMap(instance *servingv1alpha1.KnativeServing) error {
 	cm := &v1.ConfigMap{}
 	if err := api.Get(context.TODO(), types.NamespacedName{Name: caBundleConfigMapName, Namespace: instance.GetNamespace()}, cm); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Define a new configmap
 			cm.Name = caBundleConfigMapName
 			cm.Annotations = make(map[string]string)

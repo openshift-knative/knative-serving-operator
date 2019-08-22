@@ -88,6 +88,14 @@
   version = "v0.2.0"
 
 [[projects]]
+  digest = "1:05ffeeed3f0f05520de0679f6aa3219ffee69cfd6d9fb6c194879d4c818ad670"
+  name = "github.com/coreos/go-semver"
+  packages = ["semver"]
+  pruneopts = "NUT"
+  revision = "e214231b295a8ea9479f11b70b35d5acf3556d9b"
+  version = "v0.3.0"
+
+[[projects]]
   digest = "1:3d89924c8f89318d81c5d21a5d704bba9ab821f0580a5afcae2b3172f7b1156a"
   name = "github.com/coreos/prometheus-operator"
   packages = [
@@ -1148,11 +1156,10 @@
   version = "v0.2.0"
 
 [[projects]]
-  digest = "1:0b0903479eacf9b1fd2a1e0511b8b55fa8c314c14804f13dd64d76b5ac953f8f"
+  digest = "1:839d65cc4f3eaf4c6260b0543f093e3a3217f7468537d5618e43f7b1602a8109"
   name = "k8s.io/kube-aggregator"
   packages = [
     "pkg/apis/apiregistration",
-    "pkg/apis/apiregistration/v1",
     "pkg/apis/apiregistration/v1beta1",
   ]
   pruneopts = "NUT"
@@ -1236,6 +1243,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/coreos/go-semver/semver",
     "github.com/go-logr/logr",
     "github.com/go-openapi/spec",
     "github.com/jcrossley3/manifestival",
@@ -1270,7 +1278,6 @@
     "k8s.io/code-generator/cmd/informer-gen",
     "k8s.io/code-generator/cmd/lister-gen",
     "k8s.io/gengo/args",
-    "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1",
     "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1",
     "k8s.io/kube-openapi/cmd/openapi-gen",
     "k8s.io/kube-openapi/pkg/common",
