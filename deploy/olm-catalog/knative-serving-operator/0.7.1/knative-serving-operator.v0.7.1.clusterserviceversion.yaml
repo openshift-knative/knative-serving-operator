@@ -93,6 +93,10 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.name
+                - name: NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
                 - name: OPERATOR_NAME
                   value: knative-serving-operator
                 image: quay.io/openshift-knative/knative-serving-operator:v0.7.1-TP1-01

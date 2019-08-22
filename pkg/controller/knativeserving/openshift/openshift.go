@@ -3,6 +3,7 @@ package openshift
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,7 +14,6 @@ import (
 
 	mf "github.com/jcrossley3/manifestival"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -32,6 +32,10 @@ const (
 
 	// The secret in which the tls certificate for the autoscaler will be written.
 	autoscalerTlsSecretName = "autoscaler-adapter-tls"
+	// knativeServingInstalledNamespace is the ns where knative serving operator has been installed
+	knativeServingInstalledNamespace = "NAMESPACE"
+	// service monitor created successfully when monitoringLabel added to namespace
+	monitoringLabel = "openshift.io/cluster-monitoring"
 )
 
 var (
@@ -92,46 +96,32 @@ func serviceMonitorExists(namespace string) (bool, error) {
 }
 
 func installServiceMonitor(instance *servingv1alpha1.KnativeServing) error {
+	const (
+		path         = "deploy/resources/monitoring/service_monitor.yaml"
+		operatorPath = "deploy/resources/monitoring/operator_service_monitor.yaml"
+		rolePath     = "deploy/resources/monitoring/role_service_monitor.yaml"
+	)
 	namespace := instance.GetNamespace()
 	log.Info("Installing ServiceMonitor")
-	const path = "deploy/resources/monitoring/service_monitor.yaml"
-
-	if serviceMonitorExists, err := serviceMonitorExists(namespace); err != nil {
+	if err := createServiceMonitor(instance, namespace, path); err != nil {
 		return err
-	} else if !serviceMonitorExists {
-		log.Info("ServiceMonitor CRD is not installed. Skip to install ServiceMonitor")
+	}
+	log.Info("Installing role and roleBinding")
+	if err := createRoleAndRoleBinding(instance, namespace, rolePath); err != nil {
+		return err
+	}
+	// getOperatorNamespace return namespace where knative-serving-operator has been installed
+	operatorNamespace, err := getOperatorNamespace()
+	if err != nil {
+		log.Info("no namespace defined, skipping ServiceMonitor installation for the operator")
 		return nil
 	}
-
-	// Add label openshift.io/cluster-monitoring to namespace
-	ns := &corev1.Namespace{}
-	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
+	log.Info("Installing ServiceMonitor for Operator")
+	if err := createServiceMonitor(instance, operatorNamespace, operatorPath); err != nil {
 		return err
 	}
-
-	const monitoringLabel = "openshift.io/cluster-monitoring"
-	ns.Labels[monitoringLabel] = "true"
-	if err := api.Update(context.TODO(), ns); err != nil {
-		log.Error(err, fmt.Sprintf("Could not add label %q to namespace %q", monitoringLabel, namespace))
-		return err
-	}
-
-	// Install ServiceMonitor
-	manifest, err := mf.NewManifest(path, false, api)
-	if err != nil {
-		log.Error(err, "Unable to create ServiceMonitor install manifest")
-		return err
-	}
-	transforms := []mf.Transformer{mf.InjectOwner(instance)}
-	if len(namespace) > 0 {
-		transforms = append(transforms, mf.InjectNamespace(namespace))
-	}
-	if err := manifest.Transform(transforms...); err != nil {
-		log.Error(err, "Unable to transform service monitor manifest")
-		return err
-	}
-	if err := manifest.ApplyAll(); err != nil {
-		log.Error(err, "Unable to install ServiceMonitor")
+	log.Info("Installing role and roleBinding for Operator")
+	if err := createRoleAndRoleBinding(instance, operatorNamespace, rolePath); err != nil {
 		return err
 	}
 	return nil
@@ -380,6 +370,83 @@ func installNetworkPolicies(instance *servingv1alpha1.KnativeServing) error {
 	}
 	if err := manifest.ApplyAll(); err != nil {
 		log.Error(err, "Unable to install Network Policies")
+		return err
+	}
+	return nil
+}
+
+func getOperatorNamespace() (string, error) {
+	ns, found := os.LookupEnv(knativeServingInstalledNamespace)
+	if !found {
+		return "", fmt.Errorf("%s must be set", knativeServingInstalledNamespace)
+	}
+	return ns, nil
+}
+
+func addMonitoringLabelToNamespace(namespace string) error {
+	ns := &v1.Namespace{}
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
+		return err
+	}
+	if ns.Labels == nil {
+		ns.Labels = map[string]string{}
+	}
+	ns.Labels[monitoringLabel] = "true"
+	if err := api.Update(context.TODO(), ns); err != nil {
+		log.Error(err, fmt.Sprintf("could not add label %q to namespace %q", monitoringLabel, namespace))
+		return err
+	}
+	return nil
+}
+
+func createServiceMonitor(instance *servingv1alpha1.KnativeServing, namespace, path string) error {
+	if serviceMonitorExists, err := serviceMonitorExists(namespace); err != nil {
+		return err
+	} else if !serviceMonitorExists {
+		log.Info("ServiceMonitor CRD is not installed. Skip to install ServiceMonitor")
+		return nil
+	}
+	// Add label openshift.io/cluster-monitoring to namespace
+	if err := addMonitoringLabelToNamespace(namespace); err != nil {
+		return err
+	}
+	// Install ServiceMonitor
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create ServiceMonitor install manifest")
+		return err
+	}
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(namespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(namespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform serviceMonitor manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to install ServiceMonitor")
+		return err
+	}
+	return nil
+}
+
+func createRoleAndRoleBinding(instance *servingv1alpha1.KnativeServing, namespace, path string) error {
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create role and roleBinding ServiceMonitor install manifest")
+		return err
+	}
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(namespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(namespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform role and roleBinding serviceMonitor manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to create role and roleBinding for ServiceMonitor")
 		return err
 	}
 	return nil

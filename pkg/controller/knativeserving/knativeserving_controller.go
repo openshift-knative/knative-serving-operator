@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"time"
 
 	mf "github.com/jcrossley3/manifestival"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
@@ -11,6 +12,7 @@ import (
 	"github.com/openshift-knative/knative-serving-operator/version"
 
 	"github.com/operator-framework/operator-sdk/pkg/predicate"
+	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -21,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -31,6 +34,10 @@ const (
 )
 
 var (
+	knativeVersion = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "knative_serving_version",
+		Help: "Installed knative serving version info",
+	}, []string{"version"})
 	filename = flag.String("filename", "deploy/resources",
 		"The filename containing the YAML resources to apply")
 	recursive = flag.Bool("recursive", false,
@@ -39,6 +46,13 @@ var (
 	// Platform-specific behavior to affect the installation
 	platforms common.Platforms
 )
+
+func init() {
+	// Metrics have to be registered to expose:
+	metrics.Registry.MustRegister(
+		knativeVersion,
+	)
+}
 
 // Add creates a new KnativeServing Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -194,7 +208,14 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 	instance.Status.Version = version.Version
 	log.Info("Install succeeded", "version", version.Version)
 	instance.Status.MarkInstallSucceeded()
+	r.exposeMetrics()
 	return nil
+}
+
+// Expose metrics for installed knative serving operator
+func (r *ReconcileKnativeServing) exposeMetrics() {
+	log.Info("expose metrics for installed knative serving")
+	knativeVersion.WithLabelValues(version.Version).Set(float64(time.Now().Unix()))
 }
 
 // Check for all deployments available
