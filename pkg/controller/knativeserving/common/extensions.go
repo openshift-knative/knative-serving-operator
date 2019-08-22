@@ -33,10 +33,11 @@ func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manif
 	return
 }
 
-func (exts Extensions) Transform(instance *servingv1alpha1.KnativeServing) []mf.Transformer {
+func (exts Extensions) Transform(instance *servingv1alpha1.KnativeServing, scheme *runtime.Scheme) []mf.Transformer {
 	result := []mf.Transformer{
 		mf.InjectOwner(instance),
 		mf.InjectNamespace(instance.GetNamespace()),
+		replaceImageFromEnvironment("IMAGE_", scheme),
 	}
 	for _, extension := range exts {
 		result = append(result, extension.Transformers...)
