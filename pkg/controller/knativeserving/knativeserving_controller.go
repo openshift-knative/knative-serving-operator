@@ -5,8 +5,6 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/openshift"
-
 	mf "github.com/jcrossley3/manifestival"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
@@ -125,10 +123,6 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, r.ignore(instance)
 	}
 
-	if versionMatches, err := openshift.CheckVersion(r.client, r.scheme, instance); !versionMatches || err != nil {
-		return reconcile.Result{}, err
-	}
-
 	stages := []func(*servingv1alpha1.KnativeServing) error{
 		r.initStatus,
 		r.checkDependencies,
@@ -171,9 +165,6 @@ func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.Knative
 
 // Apply the embedded resources
 func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServing) error {
-	if instance.Status.IsDeploying() {
-		return nil
-	}
 	defer r.updateStatus(instance)
 
 	extensions, err := platforms.Extend(r.client, r.scheme, &r.config)

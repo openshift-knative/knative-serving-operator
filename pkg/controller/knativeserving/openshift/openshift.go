@@ -39,7 +39,7 @@ const (
 var (
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
-		PreInstalls:  []common.Extender{installNetworkPolicies, caBundleConfigMap},
+		PreInstalls:  []common.Extender{checkVersion, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
 	}
 	log    = logf.Log.WithName("openshift")
@@ -87,43 +87,34 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*comm
 	return &extension, nil
 }
 
-func CheckVersion(c client.Client, s *runtime.Scheme, instance *servingv1alpha1.KnativeServing) (bool, error) {
-	minVersion := semver.New("4.1.12")
-
-	if err := configv1.Install(s); err != nil {
-		log.Error(err, "Unable to register configv1 scheme")
-		return false, err
-	}
+func checkVersion(instance *servingv1alpha1.KnativeServing) error {
+	minVersion := semver.New("4.1.13")
 
 	clusterVersion := &configv1.ClusterVersion{}
-	if err := c.Get(context.TODO(), client.ObjectKey{Name: "version"}, clusterVersion); err != nil {
-		if meta.IsNoMatchError(err) {
-			log.Info("Not actually running on Openshift, bypassing version check")
-			return true, nil
-		}
-		return false, err
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: "version"}, clusterVersion); err != nil {
+		return err
 	}
 
 	current, err := semver.NewVersion(clusterVersion.Status.Desired.Version)
 	if err != nil {
 		log.Error(err, "could not parse version string")
-		return false, err
+		return err
 	}
 
 	if strings.Contains(string(current.PreRelease), "ci") ||
 		strings.Contains(string(current.PreRelease), "nightly") {
 		log.Info("CI/Nightly version detected, bypassing version check")
-		return true, nil
+		return nil
 	}
 
 	if current.LessThan(*minVersion) {
 		msg := fmt.Sprintf("version constraint not fulfilled: minimum version: %s, current version: %s", minVersion.String(), current.String())
-		instance.Status.MarkInstallFailed(msg)
+		instance.Status.MarkDependencyMissing(msg)
 		log.Error(errors.New(msg), msg)
-		return false, nil
+		return nil
 	}
 	log.Info("version constraint fulfilled", "version", current.String())
-	return true, nil
+	return nil
 }
 
 func serviceMonitorExists(namespace string) (bool, error) {
