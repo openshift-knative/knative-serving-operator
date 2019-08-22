@@ -2,6 +2,7 @@ package openshift
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -11,11 +12,12 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
+	"github.com/coreos/go-semver/semver"
 	mf "github.com/jcrossley3/manifestival"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -83,6 +85,45 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*comm
 	api = c
 	scheme = s
 	return &extension, nil
+}
+
+func CheckVersion(c client.Client, s *runtime.Scheme, instance *servingv1alpha1.KnativeServing) (bool, error) {
+	minVersion := semver.New("4.1.12")
+
+	if err := configv1.Install(s); err != nil {
+		log.Error(err, "Unable to register configv1 scheme")
+		return false, err
+	}
+
+	clusterVersion := &configv1.ClusterVersion{}
+	if err := c.Get(context.TODO(), client.ObjectKey{Name: "version"}, clusterVersion); err != nil {
+		if meta.IsNoMatchError(err) {
+			log.Info("Not actually running on Openshift, bypassing version check")
+			return true, nil
+		}
+		return false, err
+	}
+
+	current, err := semver.NewVersion(clusterVersion.Status.Desired.Version)
+	if err != nil {
+		log.Error(err, "could not parse version string")
+		return false, err
+	}
+
+	if strings.Contains(string(current.PreRelease), "ci") ||
+		strings.Contains(string(current.PreRelease), "nightly") {
+		log.Info("CI/Nightly version detected, bypassing version check")
+		return true, nil
+	}
+
+	if current.LessThan(*minVersion) {
+		msg := fmt.Sprintf("version constraint not fulfilled: minimum version: %s, current version: %s", minVersion.String(), current.String())
+		instance.Status.MarkInstallFailed(msg)
+		log.Error(errors.New(msg), msg)
+		return false, nil
+	}
+	log.Info("version constraint fulfilled", "version", current.String())
+	return true, nil
 }
 
 func serviceMonitorExists(namespace string) (bool, error) {
@@ -240,7 +281,7 @@ func deploymentController(u *unstructured.Unstructured) error {
 func caBundleConfigMap(instance *servingv1alpha1.KnativeServing) error {
 	cm := &v1.ConfigMap{}
 	if err := api.Get(context.TODO(), types.NamespacedName{Name: caBundleConfigMapName, Namespace: instance.GetNamespace()}, cm); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Define a new configmap
 			cm.Name = caBundleConfigMapName
 			cm.Annotations = make(map[string]string)

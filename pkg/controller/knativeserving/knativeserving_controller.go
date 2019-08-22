@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/openshift"
+
 	mf "github.com/jcrossley3/manifestival"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
@@ -13,7 +15,7 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/predicate"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -110,7 +112,7 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	// Fetch the KnativeServing instance
 	instance := &servingv1alpha1.KnativeServing{}
 	if err := r.client.Get(context.TODO(), request.NamespacedName, instance); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			if isInteresting(request) {
 				r.config.DeleteAll()
 			}
@@ -121,6 +123,10 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 
 	if !isInteresting(request) {
 		return reconcile.Result{}, r.ignore(instance)
+	}
+
+	if versionMatches, err := openshift.CheckVersion(r.client, r.scheme, instance); !versionMatches || err != nil {
+		return reconcile.Result{}, err
 	}
 
 	stages := []func(*servingv1alpha1.KnativeServing) error{
@@ -214,7 +220,7 @@ func (r *ReconcileKnativeServing) checkDeployments(instance *servingv1alpha1.Kna
 			key := client.ObjectKey{Namespace: u.GetNamespace(), Name: u.GetName()}
 			if err := r.client.Get(context.TODO(), key, deployment); err != nil {
 				instance.Status.MarkDeploymentsNotReady()
-				if errors.IsNotFound(err) {
+				if apierrors.IsNotFound(err) {
 					return nil
 				}
 				return err
