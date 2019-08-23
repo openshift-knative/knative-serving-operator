@@ -95,6 +95,8 @@ spec:
                       fieldPath: metadata.name
                 - name: OPERATOR_NAME
                   value: knative-serving-operator
+                - name: IMAGE_QUEUE
+                  value: quay.io/openshift-knative/knative-serving-queue:v0.7.1
                 - name: IMAGE_activator
                   value: quay.io/openshift-knative/knative-serving-activator:v0.7.1
                 - name: IMAGE_autoscaler

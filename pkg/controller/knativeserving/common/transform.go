@@ -46,3 +46,27 @@ func configFromResource(instance *servingv1alpha1.KnativeServing) mf.Transformer
 		return nil
 	}
 }
+
+func replaceQueueImage(u *unstructured.Unstructured) error {
+	image := os.Getenv("IMAGE_QUEUE")
+	if len(image) > 0 {
+		switch u.GetKind() {
+		case "Image":
+			if u.GetName() == "queue-proxy" {
+				x, _, _ := unstructured.NestedFieldNoCopy(u.Object, "spec", "image")
+				if x != image {
+					log.Info("Replacing queue-proxy", "image", image, "previous", x)
+					if err := unstructured.SetNestedField(u.Object, image, "spec", "image"); err != nil {
+						return err
+					}
+				}
+			}
+		case "ConfigMap":
+			if u.GetName() == "config-deployment" {
+				data := map[string]string{"queueSidecarImage": image}
+				UpdateConfigMap(u, data, log)
+			}
+		}
+	}
+	return nil
+}

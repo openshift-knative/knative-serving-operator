@@ -37,6 +37,7 @@ func (exts Extensions) Transform(instance *servingv1alpha1.KnativeServing, schem
 		mf.InjectOwner(instance),
 		mf.InjectNamespace(instance.GetNamespace()),
 		replaceImageFromEnvironment("IMAGE_", scheme),
+		replaceQueueImage,
 	}
 	for _, extension := range exts {
 		result = append(result, extension.Transformers...)
