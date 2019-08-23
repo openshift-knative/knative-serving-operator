@@ -105,6 +105,11 @@ func checkVersion(instance *servingv1alpha1.KnativeServing) error {
 		return err
 	}
 
+	if current.Major == 0 && current.Minor == 0 {
+		log.Info("CI build detected, bypassing version check")
+		return nil
+	}
+
 	if strings.Contains(string(current.PreRelease), "ci") ||
 		strings.Contains(string(current.PreRelease), "nightly") {
 		log.Info("CI/Nightly version detected, bypassing version check")
