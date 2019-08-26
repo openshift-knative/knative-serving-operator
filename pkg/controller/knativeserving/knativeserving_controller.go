@@ -146,7 +146,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	return nil
 }
 
-// Apply acceptor functions and return true if the request has been accepted byh any acceptor
+// Apply acceptor functions and return true if the request has been accepted by any acceptor
 func accepts(acceptors []common.RequestAcceptor, a handler.MapObject) bool {
 	for _, fn := range acceptors {
 		if fn(a) {
