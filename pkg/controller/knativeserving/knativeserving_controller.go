@@ -19,6 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	clientcache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -45,6 +47,8 @@ var (
 	log = logf.Log.WithName("controller_knativeserving")
 	// Platform-specific behavior to affect the installation
 	platforms common.Platforms
+	// Functions provided by platform extensions that determine addition requests to be handled by reconciler
+	requestAcceptorBuilders common.RequestAcceptorBuilders
 )
 
 func init() {
@@ -79,6 +83,57 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	// create acceptors to let in external (i.e. non-KnativeServing) requests to be handled by reconciler
+	acceptors, e := requestAcceptorBuilders.CreateRequestAcceptors(mgr.GetClient(), mgr.GetScheme())
+	if e != nil {
+		return e
+	}
+
+	// add watcher and register handler to watch deployment events.  Requests are filtered by acceptors
+	// which are driven by platform specific extension
+	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}},
+		&handler.EnqueueRequestsFromMapFunc{
+			ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+
+				var requests []reconcile.Request
+				message := "" // for logging only
+
+				inf, e := mgr.GetCache().GetInformer(&servingv1alpha1.KnativeServing{})
+				if e != nil {
+					log.Error(err, "couldn't find informer")
+				} else if accepts(acceptors, a) {
+					// This request is accepted.  It needs to be converted to knative service
+					// requests so that they can be handled by knative instances.
+					for _, key := range inf.GetStore().ListKeys() {
+						namespace, name, err := clientcache.SplitMetaNamespaceKey(key)
+						if err != nil {
+							log.Error(err, "unable to parse name")
+						}
+
+						// for logging only
+						if message == "" {
+							message = "[" + key + "]"
+						} else {
+							message = message + ",[" + key + "]"
+						}
+
+						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+							Name:      name,
+							Namespace: namespace}})
+					}
+				}
+
+				if message != "" {
+					log.Info("Map request [" + a.Meta.GetNamespace() + "/" + a.Meta.GetName() + "] to " + message)
+				}
+				return requests
+			}),
+		})
+
+	if err != nil {
+		return err
+	}
+
 	// Watch child deployments for availability
 	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
@@ -89,6 +144,16 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	return nil
+}
+
+// Apply acceptor functions and return true if the request has been accepted byh any acceptor
+func accepts(acceptors []common.RequestAcceptor, a handler.MapObject) bool {
+	for _, fn := range acceptors {
+		if fn(a) {
+			return true
+		}
+	}
+	return false
 }
 
 var _ reconcile.Reconciler = &ReconcileKnativeServing{}

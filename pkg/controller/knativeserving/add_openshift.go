@@ -6,4 +6,5 @@ import (
 
 func init() {
 	platforms = append(platforms, openshift.Configure)
+	requestAcceptorBuilders = append(requestAcceptorBuilders, openshift.BuildRequestAcceptors)
 }

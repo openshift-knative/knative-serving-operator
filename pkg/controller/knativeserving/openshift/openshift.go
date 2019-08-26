@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
@@ -38,6 +39,12 @@ const (
 	knativeServingInstalledNamespace = "NAMESPACE"
 	// service monitor created successfully when monitoringLabel added to namespace
 	monitoringLabel = "openshift.io/cluster-monitoring"
+	// revision log URL template
+	revisionlogUrlTemplate = "logging.revision-url-template"
+	// openshift logging namespace
+	openshiftLoggingNamespace = "openshift-logging"
+	// logging visualization
+	loggingVisualization = "kibana"
 )
 
 var (
@@ -46,33 +53,25 @@ var (
 		PreInstalls:  []common.Extender{checkVersion, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
 	}
-	log    = logf.Log.WithName("openshift")
-	api    client.Client
-	scheme *runtime.Scheme
+	log              = logf.Log.WithName("openshift")
+	api              client.Client
+	scheme           *runtime.Scheme
+	requestAcceptors = []common.RequestAcceptor{acceptClusterLoggingRequests}
 )
 
 // Configure OpenShift if we're soaking in it
 func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*common.Extension, error) {
-	if routeExists, err := anyKindExists(c, "", schema.GroupVersionKind{"route.openshift.io", "v1", "route"}); err != nil {
+
+	inOpenShift, err := isOpenShift(c)
+	if err != nil {
 		return nil, err
-	} else if !routeExists {
-		// Not running in OpenShift
+	}
+
+	if !inOpenShift {
 		return nil, nil
 	}
 
-	// Register config v1 scheme
-	if err := configv1.Install(s); err != nil {
-		log.Error(err, "Unable to register configv1 scheme")
-		return nil, err
-	}
-
-	// Register route v1 scheme
-	if err := routev1.Install(s); err != nil {
-		log.Error(err, "Unable to register routev1 scheme")
-		return nil, err
-	}
-	if err := apiregistrationv1beta1.AddToScheme(s); err != nil {
-		log.Error(err, "Unable to register apiservice scheme")
+	if err := registerSchemes(s); err != nil {
 		return nil, err
 	}
 
@@ -87,8 +86,64 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*comm
 	manifest.Resources = filtered
 
 	api = c
-	scheme = s
 	return &extension, nil
+}
+
+// BuildRequestAcceptors configures request acceptors for openshift platform
+func BuildRequestAcceptors(c client.Client, s *runtime.Scheme) ([]common.RequestAcceptor, error) {
+
+	inOpenShift, err := isOpenShift(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if !inOpenShift {
+		return nil, nil
+	}
+
+	// register schemes so that acceptor can use OpenShift specific APIs
+	if err := registerSchemes(s); err != nil {
+		return nil, err
+	}
+
+	return requestAcceptors, nil
+}
+
+// Returns true if we are running in OpenShift
+func isOpenShift(c client.Client) (bool, error) {
+	routeExists, err := anyKindExists(c, "", schema.GroupVersionKind{"route.openshift.io", "v1", "route"})
+	if err != nil {
+		return false, err
+	}
+	return routeExists, nil
+}
+
+func registerSchemes(s *runtime.Scheme) error {
+
+	// scheme has been registered already
+	if scheme != nil {
+		return nil
+	}
+
+	// Register config v1 scheme
+	if err := configv1.Install(s); err != nil {
+		log.Error(err, "Unable to register configv1 scheme")
+		return err
+	}
+
+	// Register route v1 scheme
+	if err := routev1.Install(s); err != nil {
+		log.Error(err, "Unable to register routev1 scheme")
+		return err
+	}
+
+	if err := apiregistrationv1beta1.AddToScheme(s); err != nil {
+		log.Error(err, "Unable to register apiservice scheme")
+		return err
+	}
+
+	scheme = s
+	return nil
 }
 
 func checkVersion(instance *servingv1alpha1.KnativeServing) error {
@@ -366,7 +421,8 @@ func configureLogURLTemplate(u *unstructured.Unstructured) error {
 	if u.GetKind() == "ConfigMap" && u.GetName() == "config-observability" {
 		// attempt to locate kibana route which is available if openshift-logging has been configured
 		route := &routev1.Route{}
-		if err := api.Get(context.TODO(), types.NamespacedName{Name: "kibana", Namespace: "openshift-logging"}, route); err != nil {
+		if err := api.Get(context.TODO(), types.NamespacedName{Name: loggingVisualization, Namespace: openshiftLoggingNamespace}, route); err != nil {
+			common.UpdateConfigMap(u, map[string]string{revisionlogUrlTemplate: ""}, log)
 			return nil
 		}
 		// retrieve host from kibana route, construct a concrete logUrl template with actual host name, update config-observability
@@ -374,7 +430,7 @@ func configureLogURLTemplate(u *unstructured.Unstructured) error {
 			host := route.Status.Ingress[0].Host
 			if host != "" {
 				url := "https://" + host + "/app/kibana#/discover?_a=(index:.all,query:'kubernetes.labels.serving_knative_dev%5C%2FrevisionUID:${REVISION_UID}')"
-				data := map[string]string{"logging.revision-url-template": url}
+				data := map[string]string{revisionlogUrlTemplate: url}
 				common.UpdateConfigMap(u, data, log)
 			}
 		}
@@ -482,4 +538,8 @@ func createRoleAndRoleBinding(instance *servingv1alpha1.KnativeServing, namespac
 		return err
 	}
 	return nil
+}
+
+func acceptClusterLoggingRequests(a handler.MapObject) bool {
+	return a.Meta.GetNamespace() == openshiftLoggingNamespace && a.Meta.GetName() == loggingVisualization
 }
