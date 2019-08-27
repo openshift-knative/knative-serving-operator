@@ -210,7 +210,12 @@ func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.Knative
 func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
 
-	err := r.config.Transform(r.extensions.Transform(instance)...)
+	extensions, err := platforms.Extend(r.client, r.scheme, &r.config)
+	if err != nil {
+		return err
+	}
+
+	err = r.config.Transform(extensions.Transform(instance, r.scheme)...)
 	if err == nil {
 		err = r.extensions.PreInstall(instance)
 		if err == nil {

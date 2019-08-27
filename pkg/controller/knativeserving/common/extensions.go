@@ -3,7 +3,6 @@ package common
 import (
 	mf "github.com/jcrossley3/manifestival"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -51,23 +50,18 @@ func (exts Extensions) AddWatchers(c controller.Controller, mgr manager.Manager)
 	return nil
 }
 
-func (exts Extensions) Transform(instance *servingv1alpha1.KnativeServing) []mf.Transformer {
+func (exts Extensions) Transform(instance *servingv1alpha1.KnativeServing, scheme *runtime.Scheme) []mf.Transformer {
 	result := []mf.Transformer{
 		mf.InjectOwner(instance),
 		mf.InjectNamespace(instance.GetNamespace()),
+		replaceImageFromEnvironment("IMAGE_", scheme),
+		replaceQueueImage,
 	}
 	for _, extension := range exts {
 		result = append(result, extension.Transformers...)
 	}
 	// Let any config in instance override everything else
-	return append(result, func(u *unstructured.Unstructured) error {
-		if u.GetKind() == "ConfigMap" {
-			if data, ok := instance.Spec.Config[u.GetName()[len(`config-`):]]; ok {
-				UpdateConfigMap(u, data, log)
-			}
-		}
-		return nil
-	})
+	return append(result, configFromResource(instance))
 }
 
 func (exts Extensions) PreInstall(instance *servingv1alpha1.KnativeServing) error {
