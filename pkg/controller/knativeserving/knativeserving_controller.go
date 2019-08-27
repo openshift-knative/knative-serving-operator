@@ -67,9 +67,14 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
-	// Create a new controller
+	// Create a new controller.  All injections (e.g. InjectClient) are performed after this call to controller.New()
 	c, err := controller.New("knativeserving-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
+		return err
+	}
+
+	// Add watchers by extensions
+	if err := r.(*ReconcileKnativeServing).extensions.AddWatchers(c, mgr); err != nil {
 		return err
 	}
 
@@ -97,9 +102,10 @@ var _ reconcile.Reconciler = &ReconcileKnativeServing{}
 type ReconcileKnativeServing struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client client.Client
-	scheme *runtime.Scheme
-	config mf.Manifest
+	client     client.Client
+	scheme     *runtime.Scheme
+	config     mf.Manifest
+	extensions *common.Extensions
 }
 
 // Create manifestival resources and KnativeServing, if necessary
@@ -109,6 +115,13 @@ func (r *ReconcileKnativeServing) InjectClient(c client.Client) error {
 		return err
 	}
 	r.config = m
+
+	// execute extend functions
+	ext, err := platforms.Extend(r.client, r.scheme, &r.config)
+	if err != nil {
+		return err
+	}
+	r.extensions = &ext
 	return nil
 }
 
@@ -181,18 +194,13 @@ func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.Knative
 func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
 
-	extensions, err := platforms.Extend(r.client, r.scheme, &r.config)
-	if err != nil {
-		return err
-	}
-
-	err = r.config.Transform(extensions.Transform(instance)...)
+	err := r.config.Transform(r.extensions.Transform(instance, r.scheme)...)
 	if err == nil {
-		err = extensions.PreInstall(instance)
+		err = r.extensions.PreInstall(instance)
 		if err == nil {
 			err = r.config.ApplyAll()
 			if err == nil {
-				err = extensions.PostInstall(instance)
+				err = r.extensions.PostInstall(instance)
 			}
 		}
 	}
