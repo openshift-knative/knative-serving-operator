@@ -13,10 +13,8 @@ import (
 var log = logf.Log.WithName("common")
 
 type Platforms []func(client.Client, *runtime.Scheme, *mf.Manifest) (*Extension, error)
-
 type Extender func(*servingv1alpha1.KnativeServing) error
 type Watcher func(controller.Controller, manager.Manager) error
-
 type Extensions []Extension
 
 type Extension struct {
