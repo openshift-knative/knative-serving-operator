@@ -6,38 +6,25 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 var log = logf.Log.WithName("common")
 
 type Platforms []func(client.Client, *runtime.Scheme, *mf.Manifest) (*Extension, error)
-type RequestAcceptorBuilders []func(client.Client, *runtime.Scheme) ([]RequestAcceptor, error)
 
 type Extender func(*servingv1alpha1.KnativeServing) error
+type Watcher func(controller.Controller, manager.Manager) error
+
 type Extensions []Extension
-type RequestAcceptor func(handler.MapObject) bool
 
 type Extension struct {
 	Transformers []mf.Transformer
 	PreInstalls  []Extender
 	PostInstalls []Extender
-}
-
-// CreateRequestAcceptors executes builders and returns all acceptor functions created
-func (requestAcceptorBuilders RequestAcceptorBuilders) CreateRequestAcceptors(c client.Client, scheme *runtime.Scheme) (result []RequestAcceptor, err error) {
-	var allAcceptors []RequestAcceptor
-	for _, fn := range requestAcceptorBuilders {
-		acceptors, err := fn(c, scheme)
-		if err != nil {
-			return acceptors, err
-		}
-
-		allAcceptors = append(allAcceptors, acceptors...)
-	}
-
-	return allAcceptors, nil
+	Watchers     []Watcher
 }
 
 func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manifest *mf.Manifest) (result Extensions, err error) {
@@ -51,6 +38,17 @@ func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manif
 		}
 	}
 	return
+}
+
+func (exts Extensions) AddWatchers(c controller.Controller, mgr manager.Manager) error {
+	for _, extension := range exts {
+		for _, watcher := range extension.Watchers {
+			if err := watcher(c, mgr); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (exts Extensions) Transform(instance *servingv1alpha1.KnativeServing) []mf.Transformer {

@@ -19,8 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
-	clientcache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -47,8 +45,6 @@ var (
 	log = logf.Log.WithName("controller_knativeserving")
 	// Platform-specific behavior to affect the installation
 	platforms common.Platforms
-	// Functions provided by platform extensions that determine addition requests to be handled by reconciler
-	requestAcceptorBuilders common.RequestAcceptorBuilders
 )
 
 func init() {
@@ -65,71 +61,36 @@ func Add(mgr manager.Manager) error {
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
+func newReconciler(mgr manager.Manager) *ReconcileKnativeServing {
 	return &ReconcileKnativeServing{client: mgr.GetClient(), scheme: mgr.GetScheme()}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
+func add(mgr manager.Manager, r *ReconcileKnativeServing) error {
 	// Create a new controller
 	c, err := controller.New("knativeserving-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
 
-	// Watch for changes to primary resource KnativeServing
-	err = c.Watch(&source.Kind{Type: &servingv1alpha1.KnativeServing{}}, &handler.EnqueueRequestForObject{}, predicate.GenerationChangedPredicate{})
+	// update manifest
+	if err := r.updateConfig(); err != nil {
+		return err
+	}
+
+	// execute extend functions
+	extensions, err := r.extend()
 	if err != nil {
 		return err
 	}
 
-	// create acceptors to let in external (i.e. non-KnativeServing) requests to be handled by reconciler
-	acceptors, e := requestAcceptorBuilders.CreateRequestAcceptors(mgr.GetClient(), mgr.GetScheme())
-	if e != nil {
-		return e
+	// Add watchers by extensions
+	if err := extensions.AddWatchers(c, mgr); err != nil {
+		return err
 	}
 
-	// add watcher and register handler to watch deployment events.  Requests are filtered by acceptors
-	// which are driven by platform specific extension
-	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}},
-		&handler.EnqueueRequestsFromMapFunc{
-			ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
-
-				var requests []reconcile.Request
-				message := "" // for logging only
-
-				inf, e := mgr.GetCache().GetInformer(&servingv1alpha1.KnativeServing{})
-				if e != nil {
-					log.Error(err, "couldn't find informer")
-				} else if accepts(acceptors, a) {
-					// This request is accepted.  It needs to be converted to knative service
-					// requests so that they can be handled by knative instances.
-					for _, key := range inf.GetStore().ListKeys() {
-						namespace, name, err := clientcache.SplitMetaNamespaceKey(key)
-						if err != nil {
-							log.Error(err, "unable to parse name")
-						}
-
-						// for logging only
-						if message == "" {
-							message = "[" + key + "]"
-						} else {
-							message = message + ",[" + key + "]"
-						}
-
-						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
-							Name:      name,
-							Namespace: namespace}})
-					}
-				}
-
-				if message != "" {
-					log.Info("Map request [" + a.Meta.GetNamespace() + "/" + a.Meta.GetName() + "] to " + message)
-				}
-				return requests
-			}),
-		})
-
+	// Watch for changes to primary resource KnativeServing
+	err = c.Watch(&source.Kind{Type: &servingv1alpha1.KnativeServing{}}, &handler.EnqueueRequestForObject{}, predicate.GenerationChangedPredicate{})
 	if err != nil {
 		return err
 	}
@@ -146,35 +107,38 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	return nil
 }
 
-// Apply acceptor functions and return true if the request has been accepted by any acceptor
-func accepts(acceptors []common.RequestAcceptor, a handler.MapObject) bool {
-	for _, fn := range acceptors {
-		if fn(a) {
-			return true
-		}
-	}
-	return false
-}
-
 var _ reconcile.Reconciler = &ReconcileKnativeServing{}
 
 // ReconcileKnativeServing reconciles a KnativeServing object
 type ReconcileKnativeServing struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client client.Client
-	scheme *runtime.Scheme
-	config mf.Manifest
+	client     client.Client
+	scheme     *runtime.Scheme
+	config     mf.Manifest
+	extensions *common.Extensions
 }
 
 // Create manifestival resources and KnativeServing, if necessary
-func (r *ReconcileKnativeServing) InjectClient(c client.Client) error {
-	m, err := mf.NewManifest(*filename, *recursive, c)
+func (r *ReconcileKnativeServing) updateConfig() error {
+	m, err := mf.NewManifest(*filename, *recursive, r.client)
 	if err != nil {
 		return err
 	}
 	r.config = m
 	return nil
+}
+
+func (r *ReconcileKnativeServing) extend() (*common.Extensions, error) {
+	if r.extensions == nil {
+		ext, err := platforms.Extend(r.client, r.scheme, &r.config)
+		if err != nil {
+			return nil, err
+		}
+		r.extensions = &ext
+	}
+	return r.extensions, nil
+
 }
 
 // Reconcile reads that state of the cluster for a KnativeServing object and makes changes based on the state read
@@ -246,18 +210,13 @@ func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.Knative
 func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
 
-	extensions, err := platforms.Extend(r.client, r.scheme, &r.config)
-	if err != nil {
-		return err
-	}
-
-	err = r.config.Transform(extensions.Transform(instance)...)
+	err := r.config.Transform(r.extensions.Transform(instance)...)
 	if err == nil {
-		err = extensions.PreInstall(instance)
+		err = r.extensions.PreInstall(instance)
 		if err == nil {
 			err = r.config.ApplyAll()
 			if err == nil {
-				err = extensions.PostInstall(instance)
+				err = r.extensions.PostInstall(instance)
 			}
 		}
 	}

@@ -24,9 +24,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
@@ -52,11 +58,11 @@ var (
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{checkVersion, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
+		Watchers:     []common.Watcher{clusterLoggingWatcher},
 	}
-	log              = logf.Log.WithName("openshift")
-	api              client.Client
-	scheme           *runtime.Scheme
-	requestAcceptors = []common.RequestAcceptor{acceptClusterLoggingRequests}
+	log    = logf.Log.WithName("openshift")
+	api    client.Client
+	scheme *runtime.Scheme
 )
 
 // Configure OpenShift if we're soaking in it
@@ -87,26 +93,6 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*comm
 
 	api = c
 	return &extension, nil
-}
-
-// BuildRequestAcceptors configures request acceptors for openshift platform
-func BuildRequestAcceptors(c client.Client, s *runtime.Scheme) ([]common.RequestAcceptor, error) {
-
-	inOpenShift, err := isOpenShift(c)
-	if err != nil {
-		return nil, err
-	}
-
-	if !inOpenShift {
-		return nil, nil
-	}
-
-	// register schemes so that acceptor can use OpenShift specific APIs
-	if err := registerSchemes(s); err != nil {
-		return nil, err
-	}
-
-	return requestAcceptors, nil
 }
 
 // Returns true if we are running in OpenShift
@@ -540,6 +526,45 @@ func createRoleAndRoleBinding(instance *servingv1alpha1.KnativeServing, namespac
 	return nil
 }
 
-func acceptClusterLoggingRequests(a handler.MapObject) bool {
-	return a.Meta.GetNamespace() == openshiftLoggingNamespace && a.Meta.GetName() == loggingVisualization
+func clusterLoggingWatcher(c controller.Controller, mgr manager.Manager) error {
+	// add watcher and register handler to watch deployment events.  Requests are filtered by acceptors
+	// which are driven by platform specific extension
+	return c.Watch(&source.Kind{Type: &appsv1.Deployment{}},
+		&handler.EnqueueRequestsFromMapFunc{
+			ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+
+				var requests []reconcile.Request
+				message := "" // for logging only
+
+				inf, e := mgr.GetCache().GetInformer(&servingv1alpha1.KnativeServing{})
+				if e != nil {
+					log.Error(e, "couldn't find informer")
+				} else if a.Meta.GetNamespace() == openshiftLoggingNamespace && a.Meta.GetName() == loggingVisualization {
+					// This request is accepted.  It needs to be converted to knative service
+					// requests so that they can be handled by knative instances.
+					for _, key := range inf.GetStore().ListKeys() {
+						namespace, name, err := cache.SplitMetaNamespaceKey(key)
+						if err != nil {
+							log.Error(err, "unable to parse name")
+						}
+
+						// for logging only
+						if message == "" {
+							message = "[" + key + "]"
+						} else {
+							message = message + ",[" + key + "]"
+						}
+
+						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+							Name:      name,
+							Namespace: namespace}})
+					}
+				}
+
+				if message != "" {
+					log.Info("Map request [" + a.Meta.GetNamespace() + "/" + a.Meta.GetName() + "] to " + message)
+				}
+				return requests
+			}),
+		})
 }
