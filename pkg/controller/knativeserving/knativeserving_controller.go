@@ -61,31 +61,20 @@ func Add(mgr manager.Manager) error {
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) *ReconcileKnativeServing {
+func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	return &ReconcileKnativeServing{client: mgr.GetClient(), scheme: mgr.GetScheme()}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r *ReconcileKnativeServing) error {
-	// Create a new controller
+func add(mgr manager.Manager, r reconcile.Reconciler) error {
+	// Create a new controller.  All injections (e.g. InjectClient) are performed after this call to controller.New()
 	c, err := controller.New("knativeserving-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
 
-	// update manifest
-	if err := r.updateConfig(); err != nil {
-		return err
-	}
-
-	// execute extend functions
-	extensions, err := r.extend()
-	if err != nil {
-		return err
-	}
-
 	// Add watchers by extensions
-	if err := extensions.AddWatchers(c, mgr); err != nil {
+	if err := r.(*ReconcileKnativeServing).extensions.AddWatchers(c, mgr); err != nil {
 		return err
 	}
 
@@ -120,25 +109,20 @@ type ReconcileKnativeServing struct {
 }
 
 // Create manifestival resources and KnativeServing, if necessary
-func (r *ReconcileKnativeServing) updateConfig() error {
-	m, err := mf.NewManifest(*filename, *recursive, r.client)
+func (r *ReconcileKnativeServing) InjectClient(c client.Client) error {
+	m, err := mf.NewManifest(*filename, *recursive, c)
 	if err != nil {
 		return err
 	}
 	r.config = m
-	return nil
-}
 
-func (r *ReconcileKnativeServing) extend() (*common.Extensions, error) {
-	if r.extensions == nil {
-		ext, err := platforms.Extend(r.client, r.scheme, &r.config)
-		if err != nil {
-			return nil, err
-		}
-		r.extensions = &ext
+	// execute extend functions
+	ext, err := platforms.Extend(r.client, r.scheme, &r.config)
+	if err != nil {
+		return err
 	}
-	return r.extensions, nil
-
+	r.extensions = &ext
+	return nil
 }
 
 // Reconcile reads that state of the cluster for a KnativeServing object and makes changes based on the state read
@@ -210,12 +194,7 @@ func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.Knative
 func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
 
-	extensions, err := platforms.Extend(r.client, r.scheme, &r.config)
-	if err != nil {
-		return err
-	}
-
-	err = r.config.Transform(extensions.Transform(instance, r.scheme)...)
+	err := r.config.Transform(r.extensions.Transform(instance, r.scheme)...)
 	if err == nil {
 		err = r.extensions.PreInstall(instance)
 		if err == nil {
