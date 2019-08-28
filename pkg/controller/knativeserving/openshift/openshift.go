@@ -24,8 +24,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
@@ -38,6 +45,12 @@ const (
 	knativeServingInstalledNamespace = "NAMESPACE"
 	// service monitor created successfully when monitoringLabel added to namespace
 	monitoringLabel = "openshift.io/cluster-monitoring"
+	// revision log URL template
+	revisionlogUrlTemplate = "logging.revision-url-template"
+	// openshift logging namespace
+	openshiftLoggingNamespace = "openshift-logging"
+	// logging visualization
+	loggingVisualization = "kibana"
 )
 
 var (
@@ -45,6 +58,7 @@ var (
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{checkVersion, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
+		Watchers:     []common.Watcher{clusterLoggingWatcher},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -53,26 +67,16 @@ var (
 
 // Configure OpenShift if we're soaking in it
 func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*common.Extension, error) {
-	if routeExists, err := anyKindExists(c, "", schema.GroupVersionKind{"route.openshift.io", "v1", "route"}); err != nil {
+	inOpenShift, err := isOpenShift(c)
+	if err != nil {
 		return nil, err
-	} else if !routeExists {
-		// Not running in OpenShift
+	}
+
+	if !inOpenShift {
 		return nil, nil
 	}
 
-	// Register config v1 scheme
-	if err := configv1.Install(s); err != nil {
-		log.Error(err, "Unable to register configv1 scheme")
-		return nil, err
-	}
-
-	// Register route v1 scheme
-	if err := routev1.Install(s); err != nil {
-		log.Error(err, "Unable to register routev1 scheme")
-		return nil, err
-	}
-	if err := apiregistrationv1beta1.AddToScheme(s); err != nil {
-		log.Error(err, "Unable to register apiservice scheme")
+	if err := registerSchemes(s); err != nil {
 		return nil, err
 	}
 
@@ -87,8 +91,44 @@ func Configure(c client.Client, s *runtime.Scheme, manifest *mf.Manifest) (*comm
 	manifest.Resources = filtered
 
 	api = c
-	scheme = s
 	return &extension, nil
+}
+
+// Returns true if we are running in OpenShift
+func isOpenShift(c client.Client) (bool, error) {
+	routeExists, err := anyKindExists(c, "", schema.GroupVersionKind{"route.openshift.io", "v1", "route"})
+	if err != nil {
+		return false, err
+	}
+	return routeExists, nil
+}
+
+func registerSchemes(s *runtime.Scheme) error {
+
+	// scheme has been registered already
+	if scheme != nil {
+		return nil
+	}
+
+	// Register config v1 scheme
+	if err := configv1.Install(s); err != nil {
+		log.Error(err, "Unable to register configv1 scheme")
+		return err
+	}
+
+	// Register route v1 scheme
+	if err := routev1.Install(s); err != nil {
+		log.Error(err, "Unable to register routev1 scheme")
+		return err
+	}
+
+	if err := apiregistrationv1beta1.AddToScheme(s); err != nil {
+		log.Error(err, "Unable to register apiservice scheme")
+		return err
+	}
+
+	scheme = s
+	return nil
 }
 
 func checkVersion(instance *servingv1alpha1.KnativeServing) error {
@@ -371,7 +411,8 @@ func configureLogURLTemplate(u *unstructured.Unstructured) error {
 	if u.GetKind() == "ConfigMap" && u.GetName() == "config-observability" {
 		// attempt to locate kibana route which is available if openshift-logging has been configured
 		route := &routev1.Route{}
-		if err := api.Get(context.TODO(), types.NamespacedName{Name: "kibana", Namespace: "openshift-logging"}, route); err != nil {
+		if err := api.Get(context.TODO(), types.NamespacedName{Name: loggingVisualization, Namespace: openshiftLoggingNamespace}, route); err != nil {
+			common.UpdateConfigMap(u, map[string]string{revisionlogUrlTemplate: ""}, log)
 			return nil
 		}
 		// retrieve host from kibana route, construct a concrete logUrl template with actual host name, update config-observability
@@ -379,7 +420,7 @@ func configureLogURLTemplate(u *unstructured.Unstructured) error {
 			host := route.Status.Ingress[0].Host
 			if host != "" {
 				url := "https://" + host + "/app/kibana#/discover?_a=(index:.all,query:'kubernetes.labels.serving_knative_dev%5C%2FrevisionUID:${REVISION_UID}')"
-				data := map[string]string{"logging.revision-url-template": url}
+				data := map[string]string{revisionlogUrlTemplate: url}
 				common.UpdateConfigMap(u, data, log)
 			}
 		}
@@ -487,4 +528,47 @@ func createRoleAndRoleBinding(instance *servingv1alpha1.KnativeServing, namespac
 		return err
 	}
 	return nil
+}
+
+func clusterLoggingWatcher(c controller.Controller, mgr manager.Manager) error {
+	// add watcher and register handler to watch deployment events.  Requests are filtered by acceptors
+	// which are driven by platform specific extension
+	return c.Watch(&source.Kind{Type: &appsv1.Deployment{}},
+		&handler.EnqueueRequestsFromMapFunc{
+			ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+
+				var requests []reconcile.Request
+				message := "" // for logging only
+
+				inf, e := mgr.GetCache().GetInformer(&servingv1alpha1.KnativeServing{})
+				if e != nil {
+					log.Error(e, "couldn't find informer")
+				} else if a.Meta.GetNamespace() == openshiftLoggingNamespace && a.Meta.GetName() == loggingVisualization {
+					// This request is accepted.  It needs to be converted to knative service
+					// requests so that they can be handled by knative instances.
+					for _, key := range inf.GetStore().ListKeys() {
+						namespace, name, err := cache.SplitMetaNamespaceKey(key)
+						if err != nil {
+							log.Error(err, "unable to parse name")
+						}
+
+						// for logging only
+						if message == "" {
+							message = "[" + key + "]"
+						} else {
+							message = message + ",[" + key + "]"
+						}
+
+						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+							Name:      name,
+							Namespace: namespace}})
+					}
+				}
+
+				if message != "" {
+					log.Info("Map request [" + a.Meta.GetNamespace() + "/" + a.Meta.GetName() + "] to " + message)
+				}
+				return requests
+			}),
+		})
 }

@@ -5,6 +5,8 @@ import (
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
@@ -12,11 +14,13 @@ var log = logf.Log.WithName("common")
 
 type Platforms []func(client.Client, *runtime.Scheme, *mf.Manifest) (*Extension, error)
 type Extender func(*servingv1alpha1.KnativeServing) error
+type Watcher func(controller.Controller, manager.Manager) error
 type Extensions []Extension
 type Extension struct {
 	Transformers []mf.Transformer
 	PreInstalls  []Extender
 	PostInstalls []Extender
+	Watchers     []Watcher
 }
 
 func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manifest *mf.Manifest) (result Extensions, err error) {
@@ -30,6 +34,17 @@ func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manif
 		}
 	}
 	return
+}
+
+func (exts Extensions) AddWatchers(c controller.Controller, mgr manager.Manager) error {
+	for _, extension := range exts {
+		for _, watcher := range extension.Watchers {
+			if err := watcher(c, mgr); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (exts Extensions) Transform(instance *servingv1alpha1.KnativeServing, scheme *runtime.Scheme) []mf.Transformer {
