@@ -2,11 +2,14 @@ package knativeserving
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"time"
 
 	mf "github.com/jcrossley3/manifestival"
+	maistrav1 "github.com/maistra/istio-operator/pkg/apis/maistra/v1"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
 	"github.com/openshift-knative/knative-serving-operator/version"
@@ -18,7 +21,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -259,20 +261,43 @@ func (r *ReconcileKnativeServing) checkDeployments(instance *servingv1alpha1.Kna
 // Check for all dependencies
 func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
-
-	istio := schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "virtualservice"}
-	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(istio)
-	if err := r.client.List(context.TODO(), nil, list); err != nil {
-		msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
-		instance.Status.MarkDependencyMissing(msg)
-		log.Error(err, msg)
-		return err
+	configuredMembersData := map[string]string{}
+	smmr := &maistrav1.ServiceMeshMemberRoll{}
+	resource := &unstructured.Unstructured{}
+	resource.SetNamespace("istio-system")
+	resource.SetName("default")
+	resource.SetAPIVersion("maistra.io/v1")
+	resource.SetKind("ServiceMeshMemberRoll")
+	smmrData, err := r.config.Get(resource)
+	if smmrData == nil {
+		if err == nil {
+			err = errors.New("serviceMeshMemberRoll does not exist in istio-system namespace")
+		}
+		return checkError(err, instance)
 	}
-
+	byteData, err := smmrData.MarshalJSON()
+	if err != nil {
+		return checkError(err, instance)
+	}
+	if err = json.Unmarshal(byteData, smmr); err != nil {
+		return checkError(err, instance)
+	}
+	for i, _ := range smmr.Status.ConfiguredMembers {
+		configuredMembersData[smmr.Status.ConfiguredMembers[i]] = smmr.Status.ConfiguredMembers[i]
+	}
+	if _, ok := configuredMembersData[instance.GetNamespace()]; !ok {
+		return checkError(errors.New("knative-serving namespace is not a configured member in serviceMeshMemberRoll"), instance)
+	}
 	log.Info("All dependencies are installed")
 	instance.Status.MarkDependenciesInstalled()
 	return nil
+}
+
+func checkError(err error, instance *servingv1alpha1.KnativeServing) error {
+	msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
+	instance.Status.MarkDependencyMissing(msg)
+	log.Error(err, msg)
+	return err
 }
 
 // Delete obsolete resources from previous versions

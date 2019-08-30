@@ -200,11 +200,14 @@
   version = "v1.6.15"
 
 [[projects]]
-  digest = "1:a1b2a5e38f79688ee8250942d5fa960525fceb1024c855c7bc76fa77b0f3cca2"
+  digest = "1:9de28de6b4453a6a96cdbb16b86d48f2640397e6739ed2d3d7ee5fd55b93d193"
   name = "github.com/gogo/protobuf"
   packages = [
+    "gogoproto",
     "proto",
+    "protoc-gen-gogo/descriptor",
     "sortkeys",
+    "types",
   ]
   pruneopts = "NUT"
   revision = "ba06b47c162d49f2af050fb4c75bcbc86a159d5c"
@@ -442,6 +445,14 @@
   ]
   pruneopts = "NUT"
   revision = "1de009706dbeb9d05f18586f0735fcdb7c524481"
+
+[[projects]]
+  branch = "maistra-1.0"
+  digest = "1:b6e40f75b8aba47c11636e00728bbba4f6721f0bf8b0e47a20ba9de358dbb67a"
+  name = "github.com/maistra/istio-operator"
+  packages = ["pkg/apis/maistra/v1"]
+  pruneopts = "NUT"
+  revision = "9572d3a006c949bedf154e788800b3fe848982af"
 
 [[projects]]
   digest = "1:56dbf15e091bf7926cb33a57cb6bdfc658fc6d3498d2f76f10a97ce7856f1fde"
@@ -917,6 +928,17 @@
   version = "v2.2.2"
 
 [[projects]]
+  branch = "release-1.1"
+  digest = "1:fe0635a2a7b00901c8e403a416fc8705c3c3b080f99a2177c4f565adc119a0ca"
+  name = "istio.io/api"
+  packages = [
+    "mesh/v1alpha1",
+    "networking/v1alpha3",
+  ]
+  pruneopts = "NUT"
+  revision = "162827b552e84a48f0d9d45a8f10ea1623706663"
+
+[[projects]]
   digest = "1:0ae5137dc94a40cd72fe4fcdf9db0c119d2d63df04af5958cfd514a2a21b3988"
   name = "k8s.io/api"
   packages = [
@@ -1250,6 +1272,7 @@
     "github.com/knative/pkg/apis",
     "github.com/knative/test-infra/scripts",
     "github.com/knative/test-infra/tools/dep-collector",
+    "github.com/maistra/istio-operator/pkg/apis/maistra/v1",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/api/route/v1",
     "github.com/operator-framework/operator-sdk/pkg/k8sutil",
@@ -1261,6 +1284,7 @@
     "github.com/operator-framework/operator-sdk/pkg/test",
     "github.com/operator-framework/operator-sdk/pkg/test/e2eutil",
     "github.com/operator-framework/operator-sdk/version",
+    "github.com/prometheus/client_golang/prometheus",
     "github.com/spf13/pflag",
     "k8s.io/api/apps/v1",
     "k8s.io/api/core/v1",
@@ -1272,6 +1296,7 @@
     "k8s.io/apimachinery/pkg/runtime/schema",
     "k8s.io/apimachinery/pkg/types",
     "k8s.io/client-go/plugin/pkg/client/auth",
+    "k8s.io/client-go/tools/cache",
     "k8s.io/code-generator/cmd/client-gen",
     "k8s.io/code-generator/cmd/conversion-gen",
     "k8s.io/code-generator/cmd/deepcopy-gen",
@@ -1286,6 +1311,7 @@
     "sigs.k8s.io/controller-runtime/pkg/controller",
     "sigs.k8s.io/controller-runtime/pkg/handler",
     "sigs.k8s.io/controller-runtime/pkg/manager",
+    "sigs.k8s.io/controller-runtime/pkg/metrics",
     "sigs.k8s.io/controller-runtime/pkg/reconcile",
     "sigs.k8s.io/controller-runtime/pkg/runtime/log",
     "sigs.k8s.io/controller-runtime/pkg/runtime/scheme",
