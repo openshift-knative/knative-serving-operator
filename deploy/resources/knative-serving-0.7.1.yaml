@@ -402,7 +402,6 @@ spec:
   group: caching.internal.knative.dev
   names:
     categories:
-    - all
     - knative-internal
     - caching
     kind: Image
