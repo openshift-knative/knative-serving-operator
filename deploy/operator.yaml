@@ -15,7 +15,7 @@ spec:
       serviceAccountName: knative-serving-operator
       containers:
         - name: knative-serving-operator
-          image: quay.io/openshift-knative/knative-serving-operator:v0.7.1-TP1-03
+          image: quay.io/openshift-knative/knative-serving-operator:v0.7.1-TP1-04
           command:
           - knative-serving-operator
           imagePullPolicy: Always
