@@ -70,6 +70,18 @@ rules:
   - '*'
 
 ---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: knative-serving-namespaced-admin
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+rules:
+  - apiGroups: ["serving.knative.dev", "networking.internal.knative.dev", "autoscaling.internal.knative.dev"]
+    resources: ["*"]
+    verbs: ["*"]
+
+---
 aggregationRule:
   clusterRoleSelectors:
   - matchLabels:
@@ -338,7 +350,6 @@ spec:
   group: networking.internal.knative.dev
   names:
     categories:
-    - all
     - knative-internal
     - networking
     kind: Certificate
@@ -370,7 +381,6 @@ spec:
   group: networking.internal.knative.dev
   names:
     categories:
-    - all
     - knative-internal
     - networking
     kind: ClusterIngress
@@ -424,7 +434,6 @@ spec:
   group: networking.internal.knative.dev
   names:
     categories:
-    - all
     - knative-internal
     - networking
     kind: Ingress
@@ -456,7 +465,6 @@ spec:
   group: autoscaling.internal.knative.dev
   names:
     categories:
-    - all
     - knative-internal
     - autoscaling
     kind: PodAutoscaler
@@ -497,7 +505,6 @@ spec:
   group: networking.internal.knative.dev
   names:
     categories:
-    - all
     - knative-internal
     - networking
     kind: ServerlessService
