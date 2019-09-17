@@ -261,13 +261,19 @@ func (r *ReconcileKnativeServing) checkDeployments(instance *servingv1alpha1.Kna
 // Check for all dependencies
 func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
-	configuredMembersData := map[string]string{}
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
 	resource := &unstructured.Unstructured{}
 	resource.SetNamespace("istio-system")
 	resource.SetName("default")
 	resource.SetAPIVersion("maistra.io/v1")
 	resource.SetKind("ServiceMeshMemberRoll")
+
+	checkError := func(err error, instance *servingv1alpha1.KnativeServing) error {
+		msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
+		instance.Status.MarkDependencyMissing(msg)
+		log.Error(err, msg)
+		return err
+	}
 	smmrData, err := r.config.Get(resource)
 	if smmrData == nil {
 		if err == nil {
@@ -282,22 +288,23 @@ func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.Kn
 	if err = json.Unmarshal(byteData, smmr); err != nil {
 		return checkError(err, instance)
 	}
-	for i, _ := range smmr.Status.ConfiguredMembers {
-		configuredMembersData[smmr.Status.ConfiguredMembers[i]] = smmr.Status.ConfiguredMembers[i]
+
+	found := func(smmr *maistrav1.ServiceMeshMemberRoll) bool {
+		for i := range smmr.Status.ConfiguredMembers {
+			if smmr.Status.ConfiguredMembers[i] == "knative-serving" {
+				return true
+			}
+			return false
+		}
+		return false
 	}
-	if _, ok := configuredMembersData[instance.GetNamespace()]; !ok {
+	if !found(smmr) {
 		return checkError(errors.New("knative-serving namespace is not a configured member in serviceMeshMemberRoll"), instance)
 	}
+
 	log.Info("All dependencies are installed")
 	instance.Status.MarkDependenciesInstalled()
 	return nil
-}
-
-func checkError(err error, instance *servingv1alpha1.KnativeServing) error {
-	msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
-	instance.Status.MarkDependencyMissing(msg)
-	log.Error(err, msg)
-	return err
 }
 
 // Delete obsolete resources from previous versions
