@@ -2,7 +2,6 @@ package knativeserving
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -261,37 +260,19 @@ func (r *ReconcileKnativeServing) checkDeployments(instance *servingv1alpha1.Kna
 // Check for all dependencies
 func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
-	smmr := &maistrav1.ServiceMeshMemberRoll{}
-	resource := &unstructured.Unstructured{}
-	resource.SetNamespace("istio-system")
-	resource.SetName("default")
-	resource.SetAPIVersion("maistra.io/v1")
-	resource.SetKind("ServiceMeshMemberRoll")
-
 	checkError := func(err error, instance *servingv1alpha1.KnativeServing) error {
 		msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
 		instance.Status.MarkDependencyMissing(msg)
 		log.Error(err, msg)
 		return err
 	}
-	smmrData, err := r.config.Get(resource)
-	if smmrData == nil {
-		if err == nil {
-			err = errors.New("serviceMeshMemberRoll does not exist in istio-system namespace")
-		}
+	smmr := &maistrav1.ServiceMeshMemberRoll{}
+	if err := r.client.Get(context.TODO(), client.ObjectKey{Namespace: "istio-system", Name: "default"}, smmr); err != nil {
 		return checkError(err, instance)
 	}
-	byteData, err := smmrData.MarshalJSON()
-	if err != nil {
-		return checkError(err, instance)
-	}
-	if err = json.Unmarshal(byteData, smmr); err != nil {
-		return checkError(err, instance)
-	}
-
 	found := func(smmr *maistrav1.ServiceMeshMemberRoll) bool {
-		for i := range smmr.Status.ConfiguredMembers {
-			if smmr.Status.ConfiguredMembers[i] == "knative-serving" {
+		for _, member := range smmr.Status.ConfiguredMembers {
+			if member == "knative-serving" {
 				return true
 			}
 			return false
@@ -301,7 +282,6 @@ func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.Kn
 	if !found(smmr) {
 		return checkError(errors.New("knative-serving namespace is not a configured member in serviceMeshMemberRoll"), instance)
 	}
-
 	log.Info("All dependencies are installed")
 	instance.Status.MarkDependenciesInstalled()
 	return nil

@@ -62,6 +62,9 @@ func main() {
 
 	printVersion()
 
+	// GetWatchNamespace returns the namespace indicating k-s-o operator watches which all namespace.
+	// ex: running operator-sdk up local --namespace=knative-serving --- operator watches only knative-serving namespace
+	//     running operator-sdk up local --namespace=""              --- operator watches for all namespaces
 	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
 		log.Error(err, "Failed to get watch namespace")
