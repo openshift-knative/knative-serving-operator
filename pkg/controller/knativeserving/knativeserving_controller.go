@@ -315,6 +315,24 @@ func (r *ReconcileKnativeServing) deleteObsoleteResources(instance *servingv1alp
 	if err := r.config.Delete(resource); err != nil {
 		return err
 	}
+	// resources from 0.7.1
+	resource.SetName("config-certmanager")
+	if err := r.config.Delete(resource); err != nil {
+		return err
+	}
+	resource.SetName("networking-certmanager")
+	resource.SetAPIVersion("apps/v1")
+	resource.SetKind("Deployment")
+	if err := r.config.Delete(resource); err != nil {
+		return err
+	}
+	resource.SetNamespace("")
+	resource.SetName("knative-serving-certmanager")
+	resource.SetAPIVersion("rbac.authorization.k8s.io/v1")
+	resource.SetKind("ClusterRole")
+	if err := r.config.Delete(resource); err != nil {
+		return err
+	}
 	return nil
 }
 
