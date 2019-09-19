@@ -275,7 +275,6 @@ func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.Kn
 			if member == "knative-serving" {
 				return true
 			}
-			return false
 		}
 		return false
 	}
