@@ -2,13 +2,11 @@ package knativeserving
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"time"
 
 	mf "github.com/jcrossley3/manifestival"
-	maistrav1 "github.com/maistra/istio-operator/pkg/apis/maistra/v1"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
 	"github.com/openshift-knative/knative-serving-operator/version"
@@ -20,6 +18,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -260,27 +259,17 @@ func (r *ReconcileKnativeServing) checkDeployments(instance *servingv1alpha1.Kna
 // Check for all dependencies
 func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
-	checkError := func(err error, instance *servingv1alpha1.KnativeServing) error {
-		msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
+
+	istio := schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "gateway"}
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(istio)
+	if err := r.client.List(context.TODO(), nil, list); err != nil {
+		msg := fmt.Sprintf("Istio not detected, GVK %v missing", istio)
 		instance.Status.MarkDependencyMissing(msg)
 		log.Error(err, msg)
 		return err
 	}
-	smmr := &maistrav1.ServiceMeshMemberRoll{}
-	if err := r.client.Get(context.TODO(), client.ObjectKey{Namespace: "istio-system", Name: "default"}, smmr); err != nil {
-		return checkError(err, instance)
-	}
-	found := func(smmr *maistrav1.ServiceMeshMemberRoll) bool {
-		for _, member := range smmr.Status.ConfiguredMembers {
-			if member == "knative-serving" {
-				return true
-			}
-		}
-		return false
-	}
-	if !found(smmr) {
-		return checkError(errors.New("knative-serving namespace is not a configured member in serviceMeshMemberRoll"), instance)
-	}
+
 	log.Info("All dependencies are installed")
 	instance.Status.MarkDependenciesInstalled()
 	return nil

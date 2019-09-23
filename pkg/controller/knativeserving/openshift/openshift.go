@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	maistrav1 "github.com/maistra/istio-operator/pkg/apis/maistra/v1"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
 	configv1 "github.com/openshift/api/config/v1"
@@ -56,7 +57,7 @@ const (
 var (
 	extension = common.Extension{
 		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
-		PreInstalls:  []common.Extender{checkVersion, installNetworkPolicies, caBundleConfigMap},
+		PreInstalls:  []common.Extender{checkVersion, verifyServiceMeshMemberRoll, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
 		Watchers:     []common.Watcher{clusterLoggingWatcher},
 	}
@@ -163,6 +164,34 @@ func checkVersion(instance *servingv1alpha1.KnativeServing) error {
 		return nil
 	}
 	log.Info("version constraint fulfilled", "version", current.String())
+	return nil
+}
+
+// Check for service mesh memberRoll for maistra
+func verifyServiceMeshMemberRoll(instance *servingv1alpha1.KnativeServing) error {
+	smmr := &maistrav1.ServiceMeshMemberRoll{}
+	checkError := func(err error, instance *servingv1alpha1.KnativeServing) error {
+		msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
+		instance.Status.MarkDependencyMissing(msg)
+		log.Error(err, msg)
+		return err
+	}
+	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: "istio-system", Name: "default"}, smmr); err != nil {
+		return checkError(err, instance)
+	}
+	found := func(smmr *maistrav1.ServiceMeshMemberRoll) bool {
+		for _, member := range smmr.Status.ConfiguredMembers {
+			if member == "knative-serving" {
+				return true
+			}
+		}
+		return false
+	}
+	if !found(smmr) {
+		return checkError(errors.New("knative-serving namespace is not a configured member in serviceMeshMemberRoll"), instance)
+	}
+	log.Info("All dependencies are installed")
+	instance.Status.MarkDependenciesInstalled()
 	return nil
 }
 
