@@ -32,6 +32,10 @@ func (is *KnativeServingStatus) IsAvailable() bool {
 	return is.GetCondition(DeploymentsAvailable).IsTrue()
 }
 
+func (is *KnativeServingStatus) IsDependenciesInstalled() bool {
+	return is.GetCondition(DependenciesInstalled).IsTrue()
+}
+
 func (is *KnativeServingStatus) IsDeploying() bool {
 	return is.IsInstalled() && !is.IsAvailable()
 }
