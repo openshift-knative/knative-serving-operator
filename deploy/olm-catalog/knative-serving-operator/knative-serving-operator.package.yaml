@@ -1,4 +1,5 @@
-packageName: knative-serving-operator
 channels:
-- name: alpha
-  currentCSV: knative-serving-operator.v0.8.1
+- currentCSV: knative-serving-operator.v0.8.1
+  name: alpha
+defaultChannel: alpha
+packageName: knative-serving-operator
