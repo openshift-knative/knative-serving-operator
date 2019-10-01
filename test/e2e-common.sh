@@ -22,7 +22,7 @@ source $(dirname $0)/../vendor/github.com/knative/test-infra/scripts/e2e-tests.s
 # CI runs in the future.
 readonly LATEST_SERVING_RELEASE_VERSION=0.8.1
 # Istio version we test with
-readonly ISTIO_VERSION=1.1.7
+readonly ISTIO_VERSION=1.1.3
 # Test without Istio mesh enabled
 readonly ISTIO_MESH=0
 # Namespace used for tests
