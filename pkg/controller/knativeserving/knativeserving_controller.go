@@ -4,13 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"time"
+	"strconv"
 
 	mf "github.com/jcrossley3/manifestival"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
 	"github.com/openshift-knative/knative-serving-operator/pkg/controller/knativeserving/common"
 	"github.com/openshift-knative/knative-serving-operator/version"
-
 	"github.com/operator-framework/operator-sdk/pkg/predicate"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,10 +33,10 @@ const (
 )
 
 var (
-	knativeVersion = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "knative_serving_version",
-		Help: "Installed knative serving version info",
-	}, []string{"version"})
+	servingHealth = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "knative_serving_health",
+		Help: "health status of knative serving",
+	}, []string{"dependenciesInstalled", "deploymentsAvailable", "installSucceeded"})
 	filename = flag.String("filename", "deploy/resources",
 		"The filename containing the YAML resources to apply")
 	recursive = flag.Bool("recursive", false,
@@ -50,7 +49,7 @@ var (
 func init() {
 	// Metrics have to be registered to expose:
 	metrics.Registry.MustRegister(
-		knativeVersion,
+		servingHealth,
 	)
 }
 
@@ -151,6 +150,7 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	}
 
 	stages := []func(*servingv1alpha1.KnativeServing) error{
+		r.exposeMetrics,
 		r.initStatus,
 		r.checkDependencies,
 		r.install,
@@ -213,14 +213,21 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 	instance.Status.Version = version.Version
 	log.Info("Install succeeded", "version", version.Version)
 	instance.Status.MarkInstallSucceeded()
-	r.exposeMetrics()
 	return nil
 }
 
 // Expose metrics for installed knative serving operator
-func (r *ReconcileKnativeServing) exposeMetrics() {
-	log.Info("expose metrics for installed knative serving")
-	knativeVersion.WithLabelValues(version.Version).Set(float64(time.Now().Unix()))
+func (r *ReconcileKnativeServing) exposeMetrics(instance *servingv1alpha1.KnativeServing) error {
+	if instance.Status.GetConditions() != nil {
+		log.Info("expose health status for installed knative serving")
+		status := 0
+		if instance.Status.IsReady() {
+			status = 1
+		}
+		servingHealth.WithLabelValues(strconv.FormatBool(instance.Status.IsDependenciesInstalled()),
+			strconv.FormatBool(instance.Status.IsAvailable()), strconv.FormatBool(instance.Status.IsInstalled())).Set(float64(status))
+	}
+	return nil
 }
 
 // Check for all deployments available
