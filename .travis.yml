@@ -21,4 +21,6 @@ before_script:
 
 script:
 - kubectl cluster-info
-- test/e2e-travis.sh
+# Disabling travis for now, seems we can't squeeze enough resources
+# out of minikube on travis for knative
+# - test/e2e-travis.sh
