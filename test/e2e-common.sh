@@ -120,3 +120,7 @@ function knative_teardown() {
   kubectl delete --ignore-not-found=true -f "${INSTALL_ISTIO_YAML}" || return 1
   kubectl delete --ignore-not-found=true clusterrolebinding cluster-admin-binding
 }
+
+function dump_extra_cluster_state() {
+  kubectl get nodes -oyaml
+}
