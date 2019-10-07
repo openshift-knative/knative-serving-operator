@@ -150,7 +150,6 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	}
 
 	stages := []func(*servingv1alpha1.KnativeServing) error{
-		r.exposeMetrics,
 		r.initStatus,
 		r.checkDependencies,
 		r.install,
@@ -180,6 +179,7 @@ func (r *ReconcileKnativeServing) initStatus(instance *servingv1alpha1.KnativeSe
 // Update the status subresource
 func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.KnativeServing) error {
 
+	defer r.exposeMetrics(instance)
 	// Account for https://github.com/kubernetes-sigs/controller-runtime/issues/406
 	gvk := instance.GroupVersionKind()
 	defer instance.SetGroupVersionKind(gvk)
@@ -217,7 +217,7 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 }
 
 // Expose metrics for installed knative serving operator
-func (r *ReconcileKnativeServing) exposeMetrics(instance *servingv1alpha1.KnativeServing) error {
+func (r *ReconcileKnativeServing) exposeMetrics(instance *servingv1alpha1.KnativeServing) {
 	if instance.Status.GetConditions() != nil {
 		log.Info("expose health status for installed knative serving")
 		status := 0
@@ -227,7 +227,6 @@ func (r *ReconcileKnativeServing) exposeMetrics(instance *servingv1alpha1.Knativ
 		servingHealth.WithLabelValues(strconv.FormatBool(instance.Status.IsDependenciesInstalled()),
 			strconv.FormatBool(instance.Status.IsAvailable()), strconv.FormatBool(instance.Status.IsInstalled())).Set(float64(status))
 	}
-	return nil
 }
 
 // Check for all deployments available
