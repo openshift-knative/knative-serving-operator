@@ -159,11 +159,9 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 
 	for _, stage := range stages {
 		if err := stage(instance); err != nil {
-			r.exposeMetrics(instance)
 			return reconcile.Result{}, err
 		}
 	}
-	r.exposeMetrics(instance)
 	return reconcile.Result{}, nil
 }
 
@@ -181,6 +179,7 @@ func (r *ReconcileKnativeServing) initStatus(instance *servingv1alpha1.KnativeSe
 // Update the status subresource
 func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.KnativeServing) error {
 
+	defer r.exposeMetrics(instance)
 	// Account for https://github.com/kubernetes-sigs/controller-runtime/issues/406
 	gvk := instance.GroupVersionKind()
 	defer instance.SetGroupVersionKind(gvk)
