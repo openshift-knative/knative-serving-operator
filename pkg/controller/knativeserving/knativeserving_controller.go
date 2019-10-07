@@ -150,7 +150,6 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	}
 
 	stages := []func(*servingv1alpha1.KnativeServing) error{
-		r.exposeMetrics,
 		r.initStatus,
 		r.checkDependencies,
 		r.install,
@@ -160,9 +159,11 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 
 	for _, stage := range stages {
 		if err := stage(instance); err != nil {
+			r.exposeMetrics(instance)
 			return reconcile.Result{}, err
 		}
 	}
+	r.exposeMetrics(instance)
 	return reconcile.Result{}, nil
 }
 
@@ -217,7 +218,7 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 }
 
 // Expose metrics for installed knative serving operator
-func (r *ReconcileKnativeServing) exposeMetrics(instance *servingv1alpha1.KnativeServing) error {
+func (r *ReconcileKnativeServing) exposeMetrics(instance *servingv1alpha1.KnativeServing) {
 	if instance.Status.GetConditions() != nil {
 		log.Info("expose health status for installed knative serving")
 		status := 0
@@ -227,7 +228,6 @@ func (r *ReconcileKnativeServing) exposeMetrics(instance *servingv1alpha1.Knativ
 		servingHealth.WithLabelValues(strconv.FormatBool(instance.Status.IsDependenciesInstalled()),
 			strconv.FormatBool(instance.Status.IsAvailable()), strconv.FormatBool(instance.Status.IsInstalled())).Set(float64(status))
 	}
-	return nil
 }
 
 // Check for all deployments available
