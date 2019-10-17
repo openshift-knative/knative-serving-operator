@@ -38,5 +38,5 @@ spec:
       logging.enable-var-log-collection: "false"
       metrics.backend-destination: "prometheus"
     tracing:
-      enable: "false"
+      backend: "none"
       sample-rate: "0.1"
