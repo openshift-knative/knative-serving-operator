@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	maistrav1 "github.com/maistra/istio-operator/pkg/apis/maistra/v1"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,18 +54,23 @@ const (
 	openshiftLoggingNamespace = "openshift-logging"
 	// logging visualization
 	loggingVisualization = "kibana"
+	// pollInterval is how frequently poll for updates.
+	pollInterval = 1 * time.Second
+	// pollTimeout is how long will wait for updates when polling.
+	pollTimeout = 10 * time.Minute
 )
 
 var (
 	extension = common.Extension{
-		Transformers: []mf.Transformer{ingress, egress, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
-		PreInstalls:  []common.Extender{checkVersion, verifyServiceMeshMemberRoll, installNetworkPolicies, caBundleConfigMap},
+		Transformers: []mf.Transformer{ingress, egress, updateIstioConfig, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
+		PreInstalls:  []common.Extender{checkVersion, createIngressNamespace, applyServiceMesh, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
 		Watchers:     []common.Watcher{clusterLoggingWatcher},
 	}
-	log    = logf.Log.WithName("openshift")
-	api    client.Client
-	scheme *runtime.Scheme
+	log              = logf.Log.WithName("openshift")
+	api              client.Client
+	scheme           *runtime.Scheme
+	ingressNamespace string
 )
 
 // Configure OpenShift if we're soaking in it
@@ -167,31 +174,147 @@ func checkVersion(instance *servingv1alpha1.KnativeServing) error {
 	return nil
 }
 
-// Check for service mesh memberRoll for maistra
-func verifyServiceMeshMemberRoll(instance *servingv1alpha1.KnativeServing) error {
-	smmr := &maistrav1.ServiceMeshMemberRoll{}
-	checkError := func(err error, instance *servingv1alpha1.KnativeServing) error {
-		msg := fmt.Sprintf("Istio not detected; please install ServiceMesh")
-		instance.Status.MarkDependencyMissing(msg)
-		log.Error(err, msg)
+// createIngressNamespace checks for knative-serving-ingress namespace and creates if doesn't exist
+func createIngressNamespace(instance *servingv1alpha1.KnativeServing) error {
+	ns := &v1.Namespace{}
+	ingressNamespace = instance.GetNamespace() + "-ingress"
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: ingressNamespace}, ns); err != nil {
+		if apierrors.IsNotFound(err) {
+			ns.Name = ingressNamespace
+			if err = api.Create(context.TODO(), ns); err != nil {
+				return err
+			}
+			return nil
+		}
 		return err
 	}
-	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: "istio-system", Name: "default"}, smmr); err != nil {
-		return checkError(err, instance)
+	return nil
+}
+
+func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
+	log.Info("Installing serviceMeshControlPlane")
+	if err := installServiceMeshControlPlane(instance); err != nil {
+		return err
 	}
-	found := func(smmr *maistrav1.ServiceMeshMemberRoll) bool {
-		for _, member := range smmr.Status.ConfiguredMembers {
-			if member == "knative-serving" {
-				return true
+	log.Info("Successfully installed serviceMeshControlPlane")
+	log.Info("Wait ServiceMeshControlPlane condition to be ready")
+	// wait for serviceMeshControlPlane condition to be ready before reconciling knative serving component
+	if err := waitForServiceMeshControlPlaneReady(); err != nil {
+		return err
+	}
+	log.Info("ServiceMeshControlPlane is ready")
+	log.Info("Installing ServiceMeshMemberRole")
+	if err := installServiceMeshMemberRole(instance); err != nil {
+		return err
+	}
+	log.Info(fmt.Sprintf("Successfully installed ServiceMeshMemberRole and configured %s namespace", instance.GetNamespace()))
+	log.Info(fmt.Sprintf("Wait ServiceMeshMemberRole to update %s namespace into configured members", instance.GetNamespace()))
+	if err := waitForServiceMeshMemberRoleReady(instance); err != nil {
+		return err
+	}
+	log.Info(fmt.Sprintf("Successfully configured %s namespace into configured members", instance.GetNamespace()))
+	return nil
+}
+
+// waitForServiceMeshControlPlaneReady checks whether serviceMeshControlPlane installs all required component
+func waitForServiceMeshControlPlaneReady() error {
+	smcp := &maistrav1.ServiceMeshControlPlane{}
+	if waitError := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
+		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace, Name: "basic-install"}, smcp); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		for _, cond := range smcp.Status.Conditions {
+			if cond.Type == maistrav1.ConditionTypeReady && cond.Status == maistrav1.ConditionStatusTrue {
+				return true, nil
 			}
 		}
-		return false
+		return false, nil
+	}); waitError != nil {
+		return waitError
 	}
-	if !found(smmr) {
-		return checkError(errors.New("knative-serving namespace is not a configured member in serviceMeshMemberRoll"), instance)
+	return nil
+}
+
+// installServiceMeshControlPlane installs serviceMeshControlPlane
+func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) error {
+	const (
+		path = "deploy/resources/serviceMesh/smcp.yaml"
+	)
+	manifest, err := mf.NewManifest(path, false, api)
+	if err != nil {
+		log.Error(err, "Unable to create serviceMeshControlPlane install manifest")
+		return err
 	}
-	log.Info("All dependencies are installed")
-	instance.Status.MarkDependenciesInstalled()
+	transforms := []mf.Transformer{mf.InjectOwner(instance)}
+	if len(ingressNamespace) > 0 {
+		transforms = append(transforms, mf.InjectNamespace(ingressNamespace))
+	}
+	if err := manifest.Transform(transforms...); err != nil {
+		log.Error(err, "Unable to transform serviceMeshControlPlane manifest")
+		return err
+	}
+	if err := manifest.ApplyAll(); err != nil {
+		log.Error(err, "Unable to install serviceMeshControlPlane")
+		return err
+	}
+	return nil
+}
+
+// installServiceMeshMemberRole installs serviceMeshMemberRole for knative-serving namespace
+func installServiceMeshMemberRole(instance *servingv1alpha1.KnativeServing) error {
+	smmr := &maistrav1.ServiceMeshMemberRoll{}
+	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace, Name: "default"}, smmr); err != nil {
+		if apierrors.IsNotFound(err) {
+			smmr.Name = "default"
+			smmr.Namespace = ingressNamespace
+			smmr.Spec.Members = []string{instance.GetNamespace()}
+			if err := api.Create(context.TODO(), smmr); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
+	} else {
+		var exist = false
+		// If serviceMeshMemberRole already exist than check for knative-serving ns is configured member or not
+		for _, member := range smmr.Status.ConfiguredMembers {
+			if member == instance.GetNamespace() {
+				exist = true
+			}
+		}
+		// if knative-serving ns is not a configured by any chance than update existing serviceMeshMemberRole
+		if !exist {
+			smmr.Spec.Members = append(smmr.Spec.Members, instance.GetNamespace())
+			if err := api.Update(context.TODO(), smmr); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// waitForServiceMeshMemberRoleReady Checks knative-serving namespace is a configured member or not
+func waitForServiceMeshMemberRoleReady(instance *servingv1alpha1.KnativeServing) error {
+	smmr := &maistrav1.ServiceMeshMemberRoll{}
+	if waitError := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
+		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace, Name: "default"}, smmr); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		for _, member := range smmr.Status.ConfiguredMembers {
+			if member == instance.GetNamespace() {
+				return true, nil
+			}
+		}
+		return false, nil
+	}); waitError != nil {
+		return waitError
+	}
 	return nil
 }
 
@@ -291,6 +414,23 @@ func egress(u *unstructured.Unstructured) error {
 	return nil
 }
 
+func updateIstioConfig(u *unstructured.Unstructured) error {
+	if u.GetKind() == "ConfigMap" && u.GetName() == "config-istio" {
+		istioConfig := &v1.ConfigMap{}
+		if err := scheme.Convert(u, istioConfig, nil); err != nil {
+			return err
+		}
+		if len(istioConfig.Data) > 0 {
+			istioConfig.Data["gateway.knative-ingress-gateway"] = "istio-ingressgateway." + ingressNamespace + ".svc.cluster.local"
+			istioConfig.Data["local-gateway.cluster-local-gateway"] = "cluster-local-gateway." + ingressNamespace + ".svc.cluster.local"
+			if err := scheme.Convert(istioConfig, u, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func deploymentController(u *unstructured.Unstructured) error {
 	const volumeName = "service-ca"
 	if u.GetKind() == "Deployment" && u.GetName() == "controller" {
@@ -343,8 +483,7 @@ func caBundleConfigMap(instance *servingv1alpha1.KnativeServing) error {
 			cm.Annotations["service.alpha.openshift.io/inject-cabundle"] = "true"
 			cm.Namespace = instance.GetNamespace()
 			cm.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(instance, instance.GroupVersionKind())})
-			err = api.Create(context.TODO(), cm)
-			if err != nil {
+			if err = api.Create(context.TODO(), cm); err != nil {
 				return err
 			}
 			// ConfigMap created successfully
