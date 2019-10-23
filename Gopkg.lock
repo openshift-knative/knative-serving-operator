@@ -1203,6 +1203,18 @@
   revision = "0cf8f7e6ed1d2e3d47d02e3b6e559369af24d803"
 
 [[projects]]
+  branch = "release-0.9"
+  digest = "1:e9ee132201e91736f6b25eff72d7ade3f077aa132e6b3d1b67e1c1b1f484068d"
+  name = "knative.dev/pkg"
+  packages = [
+    "apis/istio",
+    "apis/istio/common/v1alpha1",
+    "apis/istio/v1alpha3",
+  ]
+  pruneopts = "NUT"
+  revision = "74659889c421b26b9a416fd203f5a8d3e602bfb2"
+
+[[projects]]
   digest = "1:b7ca84cccb4630cbd53eef277cf73ac87d7bbcc9ae3e72b8cf414be381853dcc"
   name = "sigs.k8s.io/controller-runtime"
   packages = [
@@ -1295,6 +1307,7 @@
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
     "k8s.io/apimachinery/pkg/types",
+    "k8s.io/apimachinery/pkg/util/wait",
     "k8s.io/client-go/plugin/pkg/client/auth",
     "k8s.io/client-go/tools/cache",
     "k8s.io/code-generator/cmd/client-gen",
@@ -1306,6 +1319,7 @@
     "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1",
     "k8s.io/kube-openapi/cmd/openapi-gen",
     "k8s.io/kube-openapi/pkg/common",
+    "knative.dev/pkg/apis/istio/v1alpha3",
     "sigs.k8s.io/controller-runtime/pkg/client",
     "sigs.k8s.io/controller-runtime/pkg/client/config",
     "sigs.k8s.io/controller-runtime/pkg/controller",

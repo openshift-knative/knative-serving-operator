@@ -18,6 +18,8 @@ spec:
       istio-ingressgateway:
         autoscaleEnabled: false
         type: LoadBalancer
+        labels:
+          maistra-control-plane: knative-serving-ingress
       istio-egressgateway:
         enabled: false
       cluster-local-gateway:
@@ -26,6 +28,7 @@ spec:
         labels:
           app: cluster-local-gateway
           istio: cluster-local-gateway
+          maistra-control-plane: knative-serving-ingress
         ports:
           - name: status-port
             port: 15020

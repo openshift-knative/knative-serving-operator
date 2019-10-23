@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"knative.dev/pkg/apis/istio/v1alpha3"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
@@ -66,7 +67,7 @@ const (
 
 var (
 	extension = common.Extension{
-		Transformers: []mf.Transformer{ingress, egress, updateIstioConfig, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
+		Transformers: []mf.Transformer{ingress, egress, updateIstioConfig, updateGateway, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{checkVersion, applyServiceMesh, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
 		Watchers:     []common.Watcher{clusterLoggingWatcher},
@@ -420,6 +421,18 @@ func updateIstioConfig(u *unstructured.Unstructured) error {
 		istioConfig.Data["gateway.knative-ingress-gateway"] = "istio-ingressgateway." + createIngressNamespace(u.GetNamespace()) + ".svc.cluster.local"
 		istioConfig.Data["local-gateway.cluster-local-gateway"] = "cluster-local-gateway." + createIngressNamespace(u.GetNamespace()) + ".svc.cluster.local"
 		return scheme.Convert(istioConfig, u, nil)
+	}
+	return nil
+}
+
+func updateGateway(u *unstructured.Unstructured) error {
+	if u.GetKind() == "Gateway" {
+		gatewayConfig := &v1alpha3.Gateway{}
+		if err := scheme.Convert(u, gatewayConfig, nil); err != nil {
+			return err
+		}
+		gatewayConfig.Spec.Selector["maistra-control-plane"] = createIngressNamespace(u.GetNamespace())
+		return scheme.Convert(gatewayConfig, u, nil)
 	}
 	return nil
 }
