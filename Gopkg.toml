@@ -80,10 +80,9 @@ required = [
   name = "github.com/maistra/istio-operator"
   branch = "maistra-1.0"
 
-# Align knative/pkg to the version used in kantive-serving
+# Align knative/pkg to the version used in knative-serving
 [[override]]
   name = "knative.dev/pkg"
-  # HEAD as of 2019-07-25
   branch = "release-0.9"
 
 [prune]

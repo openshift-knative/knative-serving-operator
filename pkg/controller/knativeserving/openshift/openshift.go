@@ -178,23 +178,31 @@ func checkVersion(instance *servingv1alpha1.KnativeServing) error {
 	return nil
 }
 
-// createIngressNamespace checks for knative-serving-ingress namespace and creates if doesn't exist
-func createIngressNamespace(operatorNamespace string) string {
+func ingressNamespace(operatorNamespace string) string {
+	return operatorNamespace + "-ingress"
+}
+
+func createIngressNamespace(operatorNamespace string) error {
 	ns := &v1.Namespace{}
-	if err := api.Get(context.TODO(), client.ObjectKey{Name: operatorNamespace + "-ingress"}, ns); err != nil {
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: ingressNamespace(operatorNamespace)}, ns); err != nil {
 		if apierrors.IsNotFound(err) {
-			ns.Name = operatorNamespace + "-ingress"
+			ns.Name = ingressNamespace(operatorNamespace)
 			if err = api.Create(context.TODO(), ns); err != nil {
-				return ""
+				return err
 			}
-			return ns.Name
+			return nil
 		}
-		return ""
+		return err
 	}
-	return ns.Name
+	return nil
 }
 
 func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
+	log.Info("Creating namespace for service mesh")
+	if err := createIngressNamespace(instance.GetNamespace()); err != nil {
+		return err
+	}
+	log.Info(fmt.Sprintf("Successfully created namespace %s", ingressNamespace(instance.GetNamespace())))
 	log.Info("Installing serviceMeshControlPlane")
 	if err := installServiceMeshControlPlane(instance); err != nil {
 		return err
@@ -222,8 +230,8 @@ func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
 // waitForServiceMeshControlPlaneReady checks whether serviceMeshControlPlane installs all required component
 func waitForServiceMeshControlPlaneReady(operatorNamespace string) error {
 	smcp := &maistrav1.ServiceMeshControlPlane{}
-	if waitError := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
-		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: createIngressNamespace(operatorNamespace), Name: smcpName}, smcp); err != nil {
+	return wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
+		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(operatorNamespace), Name: smcpName}, smcp); err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil
 			}
@@ -235,10 +243,7 @@ func waitForServiceMeshControlPlaneReady(operatorNamespace string) error {
 			}
 		}
 		return false, nil
-	}); waitError != nil {
-		return waitError
-	}
-	return nil
+	})
 }
 
 // installServiceMeshControlPlane installs serviceMeshControlPlane
@@ -251,9 +256,9 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 		log.Error(err, "Unable to create serviceMeshControlPlane install manifest")
 		return err
 	}
-	transforms := []mf.Transformer{mf.InjectOwner(instance)}
-	if len(createIngressNamespace(instance.GetNamespace())) > 0 {
-		transforms = append(transforms, mf.InjectNamespace(createIngressNamespace(instance.GetNamespace())))
+	transforms := []mf.Transformer{
+		mf.InjectOwner(instance),
+		mf.InjectNamespace(ingressNamespace(instance.GetNamespace())),
 	}
 	if err := manifest.Transform(transforms...); err != nil {
 		log.Error(err, "Unable to transform serviceMeshControlPlane manifest")
@@ -269,10 +274,10 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 // installServiceMeshMemberRole installs serviceMeshMemberRole for knative-serving namespace
 func installServiceMeshMemberRole(operatorNamespace string) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
-	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: createIngressNamespace(operatorNamespace), Name: smmrName}, smmr); err != nil {
+	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(operatorNamespace), Name: smmrName}, smmr); err != nil {
 		if apierrors.IsNotFound(err) {
 			smmr.Name = smmrName
-			smmr.Namespace = createIngressNamespace(operatorNamespace)
+			smmr.Namespace = ingressNamespace(operatorNamespace)
 			smmr.Spec.Members = []string{operatorNamespace}
 			return api.Create(context.TODO(), smmr)
 		}
@@ -297,8 +302,8 @@ func installServiceMeshMemberRole(operatorNamespace string) error {
 // waitForServiceMeshMemberRoleReady Checks knative-serving namespace is a configured member or not
 func waitForServiceMeshMemberRoleReady(operatorNamespace string) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
-	if waitError := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
-		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: createIngressNamespace(operatorNamespace), Name: smmrName}, smmr); err != nil {
+	return wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
+		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(operatorNamespace), Name: smmrName}, smmr); err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil
 			}
@@ -310,10 +315,7 @@ func waitForServiceMeshMemberRoleReady(operatorNamespace string) error {
 			}
 		}
 		return false, nil
-	}); waitError != nil {
-		return waitError
-	}
-	return nil
+	})
 }
 
 func serviceMonitorExists(namespace string) (bool, error) {
@@ -418,8 +420,8 @@ func updateIstioConfig(u *unstructured.Unstructured) error {
 		if err := scheme.Convert(u, istioConfig, nil); err != nil {
 			return err
 		}
-		istioConfig.Data["gateway.knative-ingress-gateway"] = "istio-ingressgateway." + createIngressNamespace(u.GetNamespace()) + ".svc.cluster.local"
-		istioConfig.Data["local-gateway.cluster-local-gateway"] = "cluster-local-gateway." + createIngressNamespace(u.GetNamespace()) + ".svc.cluster.local"
+		istioConfig.Data["gateway.knative-ingress-gateway"] = "istio-ingressgateway." + ingressNamespace(u.GetNamespace()) + ".svc.cluster.local"
+		istioConfig.Data["local-gateway.cluster-local-gateway"] = "cluster-local-gateway." + ingressNamespace(u.GetNamespace()) + ".svc.cluster.local"
 		return scheme.Convert(istioConfig, u, nil)
 	}
 	return nil
@@ -431,7 +433,7 @@ func updateGateway(u *unstructured.Unstructured) error {
 		if err := scheme.Convert(u, gatewayConfig, nil); err != nil {
 			return err
 		}
-		gatewayConfig.Spec.Selector["maistra-control-plane"] = createIngressNamespace(u.GetNamespace())
+		gatewayConfig.Spec.Selector["maistra-control-plane"] = ingressNamespace(u.GetNamespace())
 		return scheme.Convert(gatewayConfig, u, nil)
 	}
 	return nil
