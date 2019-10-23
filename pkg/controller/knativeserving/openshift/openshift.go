@@ -178,15 +178,15 @@ func checkVersion(instance *servingv1alpha1.KnativeServing) error {
 	return nil
 }
 
-func ingressNamespace(operatorNamespace string) string {
-	return operatorNamespace + "-ingress"
+func ingressNamespace(servingNamespace string) string {
+	return servingNamespace + "-ingress"
 }
 
-func createIngressNamespace(operatorNamespace string) error {
+func createIngressNamespace(servingNamespace string) error {
 	ns := &v1.Namespace{}
-	if err := api.Get(context.TODO(), client.ObjectKey{Name: ingressNamespace(operatorNamespace)}, ns); err != nil {
+	if err := api.Get(context.TODO(), client.ObjectKey{Name: ingressNamespace(servingNamespace)}, ns); err != nil {
 		if apierrors.IsNotFound(err) {
-			ns.Name = ingressNamespace(operatorNamespace)
+			ns.Name = ingressNamespace(servingNamespace)
 			if err = api.Create(context.TODO(), ns); err != nil {
 				return err
 			}
@@ -228,10 +228,10 @@ func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
 }
 
 // waitForServiceMeshControlPlaneReady checks whether serviceMeshControlPlane installs all required component
-func waitForServiceMeshControlPlaneReady(operatorNamespace string) error {
+func waitForServiceMeshControlPlaneReady(servingNamespace string) error {
 	smcp := &maistrav1.ServiceMeshControlPlane{}
 	return wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
-		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(operatorNamespace), Name: smcpName}, smcp); err != nil {
+		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smcpName}, smcp); err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil
 			}
@@ -272,13 +272,13 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 }
 
 // installServiceMeshMemberRole installs serviceMeshMemberRole for knative-serving namespace
-func installServiceMeshMemberRole(operatorNamespace string) error {
+func installServiceMeshMemberRole(servingNamespace string) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
-	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(operatorNamespace), Name: smmrName}, smmr); err != nil {
+	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr); err != nil {
 		if apierrors.IsNotFound(err) {
 			smmr.Name = smmrName
-			smmr.Namespace = ingressNamespace(operatorNamespace)
-			smmr.Spec.Members = []string{operatorNamespace}
+			smmr.Namespace = ingressNamespace(servingNamespace)
+			smmr.Spec.Members = []string{servingNamespace}
 			return api.Create(context.TODO(), smmr)
 		}
 		return err
@@ -286,31 +286,31 @@ func installServiceMeshMemberRole(operatorNamespace string) error {
 	var exist = false
 	// If serviceMeshMemberRole already exist than check for knative-serving ns is configured member or not
 	for _, member := range smmr.Status.ConfiguredMembers {
-		if member == operatorNamespace {
+		if member == servingNamespace {
 			exist = true
 			break
 		}
 	}
 	// if knative-serving ns is not a configured by any chance than update existing serviceMeshMemberRole
 	if !exist {
-		smmr.Spec.Members = append(smmr.Spec.Members, operatorNamespace)
+		smmr.Spec.Members = append(smmr.Spec.Members, servingNamespace)
 		return api.Update(context.TODO(), smmr)
 	}
 	return nil
 }
 
 // waitForServiceMeshMemberRoleReady Checks knative-serving namespace is a configured member or not
-func waitForServiceMeshMemberRoleReady(operatorNamespace string) error {
+func waitForServiceMeshMemberRoleReady(servingNamespace string) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
 	return wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
-		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(operatorNamespace), Name: smmrName}, smmr); err != nil {
+		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr); err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil
 			}
 			return false, err
 		}
 		for _, member := range smmr.Status.ConfiguredMembers {
-			if member == operatorNamespace {
+			if member == servingNamespace {
 				return true, nil
 			}
 		}
