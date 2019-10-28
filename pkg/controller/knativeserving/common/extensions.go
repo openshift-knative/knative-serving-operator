@@ -82,3 +82,11 @@ func (exts Extensions) PostInstall(instance *servingv1alpha1.KnativeServing) err
 	}
 	return nil
 }
+
+type NotYetReadyError struct {
+	Err error
+}
+
+func (e *NotYetReadyError) Error() string {
+	return e.Err.Error()
+}

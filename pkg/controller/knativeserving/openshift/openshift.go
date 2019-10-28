@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -70,7 +69,7 @@ var (
 		Transformers: []mf.Transformer{ingress, egress, updateIstioConfig, updateGateway, deploymentController, annotateAutoscalerService, augmentAutoscalerDeployment, addCaBundleToApiservice, configureLogURLTemplate},
 		PreInstalls:  []common.Extender{checkVersion, applyServiceMesh, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
-		Watchers:     []common.Watcher{clusterLoggingWatcher},
+		Watchers:     []common.Watcher{watchServiceMeshControlPlane, waitServiceMeshMemberRoll, clusterLoggingWatcher},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -227,23 +226,29 @@ func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
 	return nil
 }
 
+func reconcileWithDelay() error {
+	return &common.NotYetReadyError{
+		Err: errors.New("service mesh is not yet ready"),
+	}
+}
+
 // waitForServiceMeshControlPlaneReady checks whether serviceMeshControlPlane installs all required component
 func waitForServiceMeshControlPlaneReady(servingNamespace string) error {
 	smcp := &maistrav1.ServiceMeshControlPlane{}
-	return wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
-		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smcpName}, smcp); err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil
-			}
-			return false, err
+	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smcpName}, smcp); err != nil {
+		return err
+	}
+	var ready = false
+	for _, cond := range smcp.Status.Conditions {
+		if cond.Type == maistrav1.ConditionTypeReady && cond.Status == maistrav1.ConditionStatusTrue {
+			ready = true
+			break
 		}
-		for _, cond := range smcp.Status.Conditions {
-			if cond.Type == maistrav1.ConditionTypeReady && cond.Status == maistrav1.ConditionStatusTrue {
-				return true, nil
-			}
-		}
-		return false, nil
-	})
+	}
+	if !ready {
+		return reconcileWithDelay()
+	}
+	return nil
 }
 
 // installServiceMeshControlPlane installs serviceMeshControlPlane
@@ -271,6 +276,21 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 	return nil
 }
 
+// appendIfAbsent append namespace to member if its not exist
+func appendIfAbsent(members []string, routeNamespace string) []string {
+	var exist = false
+	for _, val := range members {
+		if val == routeNamespace {
+			exist = true
+			break
+		}
+	}
+	if !exist {
+		members = append(members, routeNamespace)
+	}
+	return members
+}
+
 // installServiceMeshMemberRole installs serviceMeshMemberRole for knative-serving namespace
 func installServiceMeshMemberRole(servingNamespace string) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
@@ -291,9 +311,10 @@ func installServiceMeshMemberRole(servingNamespace string) error {
 			break
 		}
 	}
+
 	// if knative-serving ns is not a configured by any chance than update existing serviceMeshMemberRole
 	if !exist {
-		smmr.Spec.Members = append(smmr.Spec.Members, servingNamespace)
+		smmr.Spec.Members = appendIfAbsent(smmr.Spec.Members, servingNamespace)
 		return api.Update(context.TODO(), smmr)
 	}
 	return nil
@@ -302,20 +323,21 @@ func installServiceMeshMemberRole(servingNamespace string) error {
 // waitForServiceMeshMemberRoleReady Checks knative-serving namespace is a configured member or not
 func waitForServiceMeshMemberRoleReady(servingNamespace string) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
-	return wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
-		if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr); err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil
-			}
-			return false, err
+	err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr)
+	if err != nil {
+		return err
+	}
+	var ready = false
+	for _, member := range smmr.Status.ConfiguredMembers {
+		if member == servingNamespace {
+			ready = true
+			break
 		}
-		for _, member := range smmr.Status.ConfiguredMembers {
-			if member == servingNamespace {
-				return true, nil
-			}
-		}
-		return false, nil
-	})
+	}
+	if !ready {
+		return reconcileWithDelay()
+	}
+	return nil
 }
 
 func serviceMonitorExists(namespace string) (bool, error) {
@@ -704,6 +726,50 @@ func createRoleAndRoleBinding(instance *servingv1alpha1.KnativeServing, namespac
 		return err
 	}
 	return nil
+}
+
+func enqueueRequest(name string, c controller.Controller, mgr manager.Manager, obj runtime.Object) error {
+	return c.Watch(&source.Kind{Type: obj},
+		&handler.EnqueueRequestsFromMapFunc{
+			ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+				var requests []reconcile.Request
+				inf, e := mgr.GetCache().GetInformer(&servingv1alpha1.KnativeServing{})
+				if e != nil {
+					log.Error(e, "couldn't find informer")
+				} else if a.Meta.GetName() == name {
+					// This request is accepted.  It needs to be converted to knative service
+					// requests so that they can be handled by knative instances.
+					for _, key := range inf.GetStore().ListKeys() {
+						namespace, name, err := cache.SplitMetaNamespaceKey(key)
+						if err != nil {
+							log.Error(err, "unable to parse name")
+						}
+						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+							Name:      name,
+							Namespace: namespace}})
+					}
+				}
+				return requests
+			}),
+		})
+}
+func watchServiceMeshControlPlane(c controller.Controller, mgr manager.Manager) error {
+	if err := c.Watch(&source.Kind{Type: &maistrav1.ServiceMeshControlPlane{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &servingv1alpha1.KnativeServing{},
+	}); err != nil {
+		return err
+	}
+	return enqueueRequest(smcpName, c, mgr, &maistrav1.ServiceMeshControlPlane{})
+}
+
+func waitServiceMeshMemberRoll(c controller.Controller, mgr manager.Manager) error {
+	if err := c.Watch(&source.Kind{Type: &maistrav1.ServiceMeshMemberRoll{}}, &handler.EnqueueRequestForOwner{
+		OwnerType: &maistrav1.ServiceMeshControlPlane{},
+	}); err != nil {
+		return err
+	}
+	return enqueueRequest(smmrName, c, mgr, &maistrav1.ServiceMeshMemberRoll{})
 }
 
 func clusterLoggingWatcher(c controller.Controller, mgr manager.Manager) error {

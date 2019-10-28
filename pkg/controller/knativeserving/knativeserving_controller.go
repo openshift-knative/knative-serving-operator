@@ -155,6 +155,9 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 
 	for _, stage := range stages {
 		if err := stage(instance); err != nil {
+			if _, ok := err.(*common.NotYetReadyError); ok {
+				return reconcile.Result{}, nil
+			}
 			return reconcile.Result{}, err
 		}
 	}
