@@ -69,9 +69,11 @@ func InjectOwner(owner Owner) Transformer {
 	}
 }
 
-func InjectLabel(key, val string) Transformer {
+func InjectLabel(label map[string]string) Transformer {
 	return func(u *unstructured.Unstructured) error {
-		// TODO
+		if !isClusterScoped(u.GetKind()) {
+			u.SetLabels(label)
+		}
 		return nil
 	}
 }
