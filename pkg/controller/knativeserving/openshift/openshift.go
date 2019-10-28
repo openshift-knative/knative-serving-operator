@@ -62,6 +62,8 @@ const (
 	smcpName = "basic-install"
 	// ServiceMeshMemberRole name
 	smmrName = "default"
+
+	ownerKey = "serving.knative.openshift.io/owner"
 )
 
 var (
@@ -209,31 +211,31 @@ func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
 	log.Info("Successfully installed serviceMeshControlPlane")
 	log.Info("Wait ServiceMeshControlPlane condition to be ready")
 	// wait for serviceMeshControlPlane condition to be ready before reconciling knative serving component
-	if err := waitForServiceMeshControlPlaneReady(instance.GetNamespace()); err != nil {
+	if err := isServiceMeshControlPlaneReady(instance.GetNamespace()); err != nil {
 		return err
 	}
 	log.Info("ServiceMeshControlPlane is ready")
 	log.Info("Installing ServiceMeshMemberRole")
-	if err := installServiceMeshMemberRole(instance.GetNamespace()); err != nil {
+	if err := installServiceMeshMemberRole(instance); err != nil {
 		return err
 	}
 	log.Info(fmt.Sprintf("Successfully installed ServiceMeshMemberRole and configured %s namespace", instance.GetNamespace()))
 	log.Info(fmt.Sprintf("Wait ServiceMeshMemberRole to update %s namespace into configured members", instance.GetNamespace()))
-	if err := waitForServiceMeshMemberRoleReady(instance.GetNamespace()); err != nil {
+	if err := isServiceMeshMemberRoleReady(instance.GetNamespace()); err != nil {
 		return err
 	}
 	log.Info(fmt.Sprintf("Successfully configured %s namespace into configured members", instance.GetNamespace()))
 	return nil
 }
 
-func reconcileWithDelay() error {
+func breakReconcilation(err error) error {
 	return &common.NotYetReadyError{
-		Err: errors.New("service mesh is not yet ready"),
+		Err: err,
 	}
 }
 
-// waitForServiceMeshControlPlaneReady checks whether serviceMeshControlPlane installs all required component
-func waitForServiceMeshControlPlaneReady(servingNamespace string) error {
+// isServiceMeshControlPlaneReady checks whether serviceMeshControlPlane installs all required component
+func isServiceMeshControlPlaneReady(servingNamespace string) error {
 	smcp := &maistrav1.ServiceMeshControlPlane{}
 	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smcpName}, smcp); err != nil {
 		return err
@@ -246,7 +248,7 @@ func waitForServiceMeshControlPlaneReady(servingNamespace string) error {
 		}
 	}
 	if !ready {
-		return reconcileWithDelay()
+		return breakReconcilation(errors.New("SMCP not yet ready"))
 	}
 	return nil
 }
@@ -264,6 +266,7 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 	transforms := []mf.Transformer{
 		mf.InjectOwner(instance),
 		mf.InjectNamespace(ingressNamespace(instance.GetNamespace())),
+		mf.InjectLabel(ownerKey, fmt.Sprintf("%s/%s", instance.Namespace, instance.Name)),
 	}
 	if err := manifest.Transform(transforms...); err != nil {
 		log.Error(err, "Unable to transform serviceMeshControlPlane manifest")
@@ -292,13 +295,15 @@ func appendIfAbsent(members []string, routeNamespace string) []string {
 }
 
 // installServiceMeshMemberRole installs serviceMeshMemberRole for knative-serving namespace
-func installServiceMeshMemberRole(servingNamespace string) error {
+func installServiceMeshMemberRole(instance *servingv1alpha1.KnativeServing) error {
+	servingNamespace := instance.Namespace
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
 	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr); err != nil {
 		if apierrors.IsNotFound(err) {
 			smmr.Name = smmrName
 			smmr.Namespace = ingressNamespace(servingNamespace)
 			smmr.Spec.Members = []string{servingNamespace}
+			smmr.Labels = map[string]string{ownerKey: fmt.Sprintf("%s/%s", instance.Namespace, instance.Name)}
 			return api.Create(context.TODO(), smmr)
 		}
 		return err
@@ -320,8 +325,8 @@ func installServiceMeshMemberRole(servingNamespace string) error {
 	return nil
 }
 
-// waitForServiceMeshMemberRoleReady Checks knative-serving namespace is a configured member or not
-func waitForServiceMeshMemberRoleReady(servingNamespace string) error {
+// isServiceMeshMemberRoleReady Checks knative-serving namespace is a configured member or not
+func isServiceMeshMemberRoleReady(servingNamespace string) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
 	err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr)
 	if err != nil {
@@ -335,7 +340,7 @@ func waitForServiceMeshMemberRoleReady(servingNamespace string) error {
 		}
 	}
 	if !ready {
-		return reconcileWithDelay()
+		return breakReconcilation(errors.New("SMMR not yet ready"))
 	}
 	return nil
 }
@@ -728,48 +733,37 @@ func createRoleAndRoleBinding(instance *servingv1alpha1.KnativeServing, namespac
 	return nil
 }
 
-func enqueueRequest(name string, c controller.Controller, mgr manager.Manager, obj runtime.Object) error {
+func watchServiceMeshType(c controller.Controller, mgr manager.Manager, obj runtime.Object) error {
 	return c.Watch(&source.Kind{Type: obj},
 		&handler.EnqueueRequestsFromMapFunc{
 			ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
-				var requests []reconcile.Request
-				inf, e := mgr.GetCache().GetInformer(&servingv1alpha1.KnativeServing{})
-				if e != nil {
-					log.Error(e, "couldn't find informer")
-				} else if a.Meta.GetName() == name {
-					// This request is accepted.  It needs to be converted to knative service
-					// requests so that they can be handled by knative instances.
-					for _, key := range inf.GetStore().ListKeys() {
-						namespace, name, err := cache.SplitMetaNamespaceKey(key)
-						if err != nil {
-							log.Error(err, "unable to parse name")
-						}
-						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
-							Name:      name,
-							Namespace: namespace}})
-					}
+				owner := a.Meta.GetLabels()[ownerKey]
+				if owner == "" {
+					return nil
 				}
-				return requests
+
+				namespace, name, err := cache.SplitMetaNamespaceKey(owner)
+				if err != nil {
+					log.Error(err, "unable to parse name")
+					return nil
+				}
+
+				return []reconcile.Request{{
+					NamespacedName: types.NamespacedName{
+						Namespace: namespace,
+						Name:      name,
+					},
+				}}
 			}),
 		})
 }
+
 func watchServiceMeshControlPlane(c controller.Controller, mgr manager.Manager) error {
-	if err := c.Watch(&source.Kind{Type: &maistrav1.ServiceMeshControlPlane{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &servingv1alpha1.KnativeServing{},
-	}); err != nil {
-		return err
-	}
-	return enqueueRequest(smcpName, c, mgr, &maistrav1.ServiceMeshControlPlane{})
+	return watchServiceMeshType(c, mgr, &maistrav1.ServiceMeshControlPlane{})
 }
 
 func waitServiceMeshMemberRoll(c controller.Controller, mgr manager.Manager) error {
-	if err := c.Watch(&source.Kind{Type: &maistrav1.ServiceMeshMemberRoll{}}, &handler.EnqueueRequestForOwner{
-		OwnerType: &maistrav1.ServiceMeshControlPlane{},
-	}); err != nil {
-		return err
-	}
-	return enqueueRequest(smmrName, c, mgr, &maistrav1.ServiceMeshMemberRoll{})
+	return watchServiceMeshType(c, mgr, &maistrav1.ServiceMeshMemberRoll{})
 }
 
 func clusterLoggingWatcher(c controller.Controller, mgr manager.Manager) error {

@@ -69,6 +69,13 @@ func InjectOwner(owner Owner) Transformer {
 	}
 }
 
+func InjectLabel(key, val string) Transformer {
+	return func(u *unstructured.Unstructured) error {
+		// TODO
+		return nil
+	}
+}
+
 func isClusterScoped(kind string) bool {
 	// TODO: something more clever using !APIResource.Namespaced maybe?
 	switch strings.ToLower(kind) {
