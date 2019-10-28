@@ -253,9 +253,9 @@ func isServiceMeshControlPlaneReady(servingNamespace string) error {
 	return nil
 }
 
-func injectLabel(label map[string]string) mf.Transformer {
+func injectLabels(labels map[string]string) mf.Transformer {
 	return func(u *unstructured.Unstructured) error {
-		u.SetLabels(label)
+		u.SetLabels(labels)
 		return nil
 	}
 }
@@ -273,7 +273,7 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 	transforms := []mf.Transformer{
 		mf.InjectOwner(instance),
 		mf.InjectNamespace(ingressNamespace(instance.GetNamespace())),
-		injectLabel(map[string]string{
+		injectLabels(map[string]string{
 			ownerName:      instance.Name,
 			ownerNamespace: instance.Namespace,
 		}),
@@ -748,7 +748,7 @@ func watchServiceMeshType(c controller.Controller, mgr manager.Manager, obj runt
 	return c.Watch(&source.Kind{Type: obj},
 		&handler.EnqueueRequestsFromMapFunc{
 			ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
-				if a.Meta.GetLabels()[ownerName] == "" && a.Meta.GetLabels()[ownerNamespace] == "" {
+				if a.Meta.GetLabels()[ownerName] == "" || a.Meta.GetLabels()[ownerNamespace] == "" {
 					return nil
 				}
 				return []reconcile.Request{{
