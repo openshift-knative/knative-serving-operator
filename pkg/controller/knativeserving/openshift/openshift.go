@@ -253,6 +253,13 @@ func isServiceMeshControlPlaneReady(servingNamespace string) error {
 	return nil
 }
 
+func injectLabel(label map[string]string) mf.Transformer {
+	return func(u *unstructured.Unstructured) error {
+		u.SetLabels(label)
+		return nil
+	}
+}
+
 // installServiceMeshControlPlane installs serviceMeshControlPlane
 func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) error {
 	const (
@@ -266,7 +273,7 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 	transforms := []mf.Transformer{
 		mf.InjectOwner(instance),
 		mf.InjectNamespace(ingressNamespace(instance.GetNamespace())),
-		mf.InjectLabel(map[string]string{
+		injectLabel(map[string]string{
 			ownerName:      instance.Name,
 			ownerNamespace: instance.Namespace,
 		}),
@@ -333,8 +340,7 @@ func installServiceMeshMemberRoll(instance *servingv1alpha1.KnativeServing) erro
 // isServiceMeshMemberRoleReady Checks knative-serving namespace is a configured member or not
 func isServiceMeshMemberRollReady(servingNamespace string) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
-	err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr)
-	if err != nil {
+	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr); err != nil {
 		return err
 	}
 	var ready = false
