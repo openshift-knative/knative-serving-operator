@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	maistrav1 "github.com/maistra/istio-operator/pkg/apis/maistra/v1"
 	servingv1alpha1 "github.com/openshift-knative/knative-serving-operator/pkg/apis/serving/v1alpha1"
@@ -54,10 +53,6 @@ const (
 	openshiftLoggingNamespace = "openshift-logging"
 	// logging visualization
 	loggingVisualization = "kibana"
-	// pollInterval is how frequently poll for updates.
-	pollInterval = 1 * time.Second
-	// pollTimeout is how long will wait for updates when polling.
-	pollTimeout = 10 * time.Minute
 	// ServiceMeshControlPlane name
 	smcpName = "basic-install"
 	// ServiceMeshMemberRole name
@@ -225,6 +220,7 @@ func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
 		return err
 	}
 	log.Info(fmt.Sprintf("Successfully configured %s namespace into configured members", instance.GetNamespace()))
+	instance.Status.MarkDependenciesInstalled()
 	return nil
 }
 
