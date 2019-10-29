@@ -347,7 +347,7 @@ func isServiceMeshMemberRollReady(servingNamespace string) error {
 		}
 	}
 	if !ready {
-		return breakReconcilation(errors.New("ServiceMeshMemberRoll not yet ready"))
+		return breakReconcilation(errors.New("SMMR not yet ready"))
 	}
 	return nil
 }
