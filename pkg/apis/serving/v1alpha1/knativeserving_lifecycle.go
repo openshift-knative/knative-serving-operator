@@ -48,11 +48,11 @@ func (is *KnativeServingStatus) InitializeConditions() {
 	conditions.Manage(is).InitializeConditions()
 }
 
-func (is *KnativeServingStatus) MarkInstallFailed(format, msg string) {
+func (is *KnativeServingStatus) MarkInstallFailed(msg string) {
 	conditions.Manage(is).MarkFalse(
 		InstallSucceeded,
 		"Error",
-		format+": %s", msg)
+		msg)
 }
 
 func (is *KnativeServingStatus) MarkIgnored(msg string) {

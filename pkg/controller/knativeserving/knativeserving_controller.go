@@ -156,8 +156,6 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	for _, stage := range stages {
 		if err := stage(instance); err != nil {
 			if _, ok := err.(*common.NotYetReadyError); ok {
-				instance.Status.MarkInstallFailed("Install in progress", err.Error())
-				r.updateStatus(instance)
 				return reconcile.Result{}, nil
 			}
 			return reconcile.Result{}, err
@@ -206,7 +204,11 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 		}
 	}
 	if err != nil {
-		instance.Status.MarkInstallFailed("Install failed with message", err.Error())
+		if _, ok := err.(*common.NotYetReadyError); ok {
+			instance.Status.MarkInstallFailed("Install in progress: " + err.Error())
+			return err
+		}
+		instance.Status.MarkInstallFailed("Install failed with message: " + err.Error())
 		return err
 	}
 
