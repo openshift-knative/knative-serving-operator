@@ -57,15 +57,9 @@ metadata:
     serving.knative.dev/release: "v0.9.0"
   name: knative-serving-namespaced-admin
 rules:
-- apiGroups:
-  - serving.knative.dev
-  - networking.internal.knative.dev
-  - autoscaling.internal.knative.dev
-  resources:
-  - '*'
-  verbs:
-  - '*'
-
+  - apiGroups: ["serving.knative.dev", "networking.internal.knative.dev", "autoscaling.internal.knative.dev"]
+    resources: ["certificates", "configurations", "images", "ingresses", "metrics", "podautoscalers", "revisions", "routes", "serverlessservices", "services"] # Use "*" once SRVKS-308 is solved.
+    verbs: ["*"]
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
@@ -76,7 +70,7 @@ metadata:
     serving.knative.dev/release: "v0.9.0"
 rules:
   - apiGroups: ["serving.knative.dev", "networking.internal.knative.dev", "autoscaling.internal.knative.dev"]
-    resources: ["*"]
+    resources: ["certificates", "configurations", "images", "ingresses", "metrics", "podautoscalers", "revisions", "routes", "serverlessservices", "services"] # Use "*" once SRVKS-308 is solved.
     verbs: ["create", "update", "patch", "delete"]
 
 ---
@@ -89,7 +83,7 @@ metadata:
     serving.knative.dev/release: "v0.9.0"
 rules:
   - apiGroups: ["serving.knative.dev", "networking.internal.knative.dev", "autoscaling.internal.knative.dev"]
-    resources: ["*"]
+    resources: ["certificates", "configurations", "images", "ingresses", "metrics", "podautoscalers", "revisions", "routes", "serverlessservices", "services"] # Use "*" once SRVKS-308 is solved.
     verbs: ["get", "list", "watch"]
 ---
 
