@@ -183,6 +183,11 @@ func createIngressNamespace(servingNamespace string) error {
 	if err := api.Get(context.TODO(), client.ObjectKey{Name: ingressNamespace(servingNamespace)}, ns); err != nil {
 		if apierrors.IsNotFound(err) {
 			ns.Name = ingressNamespace(servingNamespace)
+			nsObject, err := getNamespaceObject(servingNamespace)
+			if err != nil {
+				return err
+			}
+			ns.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(nsObject, nsObject.GroupVersionKind())})
 			if err = api.Create(context.TODO(), ns); err != nil {
 				return err
 			}
@@ -659,8 +664,8 @@ func getOperatorNamespace() (string, error) {
 }
 
 func addMonitoringLabelToNamespace(namespace string) error {
-	ns := &v1.Namespace{}
-	if err := api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns); err != nil {
+	ns, err := getNamespaceObject(namespace)
+	if err != nil {
 		return err
 	}
 	if ns.Labels == nil {
@@ -672,6 +677,11 @@ func addMonitoringLabelToNamespace(namespace string) error {
 		return err
 	}
 	return nil
+}
+
+func getNamespaceObject(namespace string) (*v1.Namespace, error) {
+	ns := &v1.Namespace{}
+	return ns, api.Get(context.TODO(), client.ObjectKey{Name: namespace}, ns)
 }
 
 func createServiceMonitor(instance *servingv1alpha1.KnativeServing, namespace, path string) error {
