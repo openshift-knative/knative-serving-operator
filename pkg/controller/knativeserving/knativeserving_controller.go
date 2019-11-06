@@ -17,7 +17,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -78,17 +77,15 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to primary resource KnativeServing
-	err = c.Watch(&source.Kind{Type: &servingv1alpha1.KnativeServing{}}, &handler.EnqueueRequestForObject{}, predicate.GenerationChangedPredicate{})
-	if err != nil {
+	if err = c.Watch(&source.Kind{Type: &servingv1alpha1.KnativeServing{}}, &handler.EnqueueRequestForObject{}, predicate.GenerationChangedPredicate{}); err != nil {
 		return err
 	}
 
 	// Watch child deployments for availability
-	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
+	if err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &servingv1alpha1.KnativeServing{},
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -151,7 +148,6 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 
 	stages := []func(*servingv1alpha1.KnativeServing) error{
 		r.initStatus,
-		r.checkDependencies,
 		r.install,
 		r.checkDeployments,
 		r.deleteObsoleteResources,
@@ -159,6 +155,9 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 
 	for _, stage := range stages {
 		if err := stage(instance); err != nil {
+			if _, ok := err.(*common.NotYetReadyError); ok {
+				return reconcile.Result{}, nil
+			}
 			return reconcile.Result{}, err
 		}
 	}
@@ -205,7 +204,11 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 		}
 	}
 	if err != nil {
-		instance.Status.MarkInstallFailed(err.Error())
+		if _, ok := err.(*common.NotYetReadyError); ok {
+			instance.Status.MarkInstallNotReady("Install in progress: " + err.Error())
+			return err
+		}
+		instance.Status.MarkInstallFailed("Install failed with message: " + err.Error())
 		return err
 	}
 
@@ -259,25 +262,6 @@ func (r *ReconcileKnativeServing) checkDeployments(instance *servingv1alpha1.Kna
 	}
 	log.Info("All deployments are available")
 	instance.Status.MarkDeploymentsAvailable()
-	return nil
-}
-
-// Check for all dependencies
-func (r *ReconcileKnativeServing) checkDependencies(instance *servingv1alpha1.KnativeServing) error {
-	defer r.updateStatus(instance)
-
-	istio := schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "gateway"}
-	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(istio)
-	if err := r.client.List(context.TODO(), nil, list); err != nil {
-		msg := fmt.Sprintf("Istio not detected, GVK %v missing", istio)
-		instance.Status.MarkDependencyMissing(msg)
-		log.Error(err, msg)
-		return err
-	}
-
-	log.Info("All dependencies are installed")
-	instance.Status.MarkDependenciesInstalled()
 	return nil
 }
 
