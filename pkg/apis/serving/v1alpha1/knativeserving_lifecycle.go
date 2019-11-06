@@ -55,6 +55,13 @@ func (is *KnativeServingStatus) MarkInstallFailed(msg string) {
 		msg)
 }
 
+func (is *KnativeServingStatus) MarkInstallNotReady(msg string) {
+	conditions.Manage(is).MarkFalse(
+		InstallSucceeded,
+		"NotReady",
+		msg)
+}
+
 func (is *KnativeServingStatus) MarkIgnored(msg string) {
 	conditions.Manage(is).MarkFalse(
 		InstallSucceeded,

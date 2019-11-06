@@ -212,6 +212,11 @@ func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
 	log.Info("ServiceMeshControlPlane is ready")
 	log.Info("Installing ServiceMeshMemberRoll")
 	if err := installServiceMeshMemberRoll(instance); err != nil {
+		// ref for substring https://github.com/Maistra/istio-operator/blob/maistra-1.0/pkg/controller/servicemesh/validation/memberroll.go#L95
+		if strings.Contains(err.Error(), "one or more members are already defined in another ServiceMeshMemberRoll") {
+			log.Info(fmt.Sprintf("failed to update ServiceMeshMemberRole because namespace %s is already a member of another ServiceMeshMemberRoll", instance.GetNamespace()))
+			return errors.New(fmt.Sprintf("Could not add %s to SMMR. Please refer to the release notes of Openshift Serverless 1.2.0 for more information on how to resolve this.", instance.GetNamespace()))
+		}
 		return err
 	}
 	log.Info(fmt.Sprintf("Successfully installed ServiceMeshMemberRoll and configured %s namespace", instance.GetNamespace()))
@@ -285,21 +290,6 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 	return nil
 }
 
-// appendIfAbsent append namespace to member if its not exist
-func appendIfAbsent(members []string, routeNamespace string) []string {
-	var exist = false
-	for _, val := range members {
-		if val == routeNamespace {
-			exist = true
-			break
-		}
-	}
-	if !exist {
-		members = append(members, routeNamespace)
-	}
-	return members
-}
-
 // installServiceMeshMemberRoll installs ServiceMeshMemberRoll for knative-serving namespace
 func installServiceMeshMemberRoll(instance *servingv1alpha1.KnativeServing) error {
 	smmr := &maistrav1.ServiceMeshMemberRoll{}
@@ -316,21 +306,23 @@ func installServiceMeshMemberRoll(instance *servingv1alpha1.KnativeServing) erro
 		}
 		return err
 	}
-	var exist = false
 	// If ServiceMeshMemberRoll already exist than check for knative-serving ns is configured member or not
-	for _, member := range smmr.Status.ConfiguredMembers {
-		if member == instance.Namespace {
-			exist = true
-			break
-		}
-	}
-
-	// if knative-serving ns is not a configured by any chance than update existing ServiceMeshMemberRoll
-	if !exist {
-		smmr.Spec.Members = appendIfAbsent(smmr.Spec.Members, instance.Namespace)
+	// if knative-serving ns is not configured by any chance than update existing ServiceMeshMemberRoll
+	if newMembers, changed := appendIfAbsent(smmr.Spec.Members, instance.Namespace); changed {
+		smmr.Spec.Members = newMembers
 		return api.Update(context.TODO(), smmr)
 	}
 	return nil
+}
+
+// appendIfAbsent append namespace to member if its not exist
+func appendIfAbsent(members []string, routeNamespace string) ([]string, bool) {
+	for _, val := range members {
+		if val == routeNamespace {
+			return members, false
+		}
+	}
+	return append(members, routeNamespace), true
 }
 
 // isServiceMeshMemberRoleReady Checks knative-serving namespace is a configured member or not
@@ -339,17 +331,12 @@ func isServiceMeshMemberRollReady(servingNamespace string) error {
 	if err := api.Get(context.TODO(), client.ObjectKey{Namespace: ingressNamespace(servingNamespace), Name: smmrName}, smmr); err != nil {
 		return err
 	}
-	var ready = false
 	for _, member := range smmr.Status.ConfiguredMembers {
 		if member == servingNamespace {
-			ready = true
-			break
+			return nil
 		}
 	}
-	if !ready {
-		return breakReconcilation(errors.New("SMMR not yet ready"))
-	}
-	return nil
+	return breakReconcilation(errors.New("SMMR not yet ready"))
 }
 
 func serviceMonitorExists(namespace string) (bool, error) {

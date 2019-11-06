@@ -205,7 +205,7 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 	}
 	if err != nil {
 		if _, ok := err.(*common.NotYetReadyError); ok {
-			instance.Status.MarkInstallFailed("Install in progress: " + err.Error())
+			instance.Status.MarkInstallNotReady("Install in progress: " + err.Error())
 			return err
 		}
 		instance.Status.MarkInstallFailed("Install failed with message: " + err.Error())
