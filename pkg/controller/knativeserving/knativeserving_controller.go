@@ -325,7 +325,7 @@ func isInteresting(request reconcile.Request) bool {
 func (r *ReconcileKnativeServing) ignore(instance *servingv1alpha1.KnativeServing) (err error) {
 	err = r.initStatus(instance)
 	if err == nil {
-		msg := fmt.Sprintf("The only KnativeServing resource that matters is %s/%s", operand, operand)
+		msg := fmt.Sprintf("The KnativeServing resource needs to be created as %s/%s, otherwise it will be ignored", operand, operand)
 		instance.Status.MarkIgnored(msg)
 		err = r.updateStatus(instance)
 	}

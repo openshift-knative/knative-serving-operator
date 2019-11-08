@@ -215,7 +215,10 @@ func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
 		// ref for substring https://github.com/Maistra/istio-operator/blob/maistra-1.0/pkg/controller/servicemesh/validation/memberroll.go#L95
 		if strings.Contains(err.Error(), "one or more members are already defined in another ServiceMeshMemberRoll") {
 			log.Info(fmt.Sprintf("failed to update ServiceMeshMemberRole because namespace %s is already a member of another ServiceMeshMemberRoll", instance.GetNamespace()))
-			return errors.New(fmt.Sprintf("Could not add %s to SMMR. Please refer to the release notes of Openshift Serverless 1.2.0 for more information on how to resolve this.", instance.GetNamespace()))
+			msg := "Could not add '%s' to ServiceMeshMemberRoll (SMMR) because it's already part of another SMMR, " +
+				"likely one in 'istio-system' (check with 'oc get smmr --all-namespaces'). " +
+				"Remove '%s' and all namespaces that contain Knative Services from that other SMMR"
+			return fmt.Errorf(msg, instance.GetNamespace(), instance.GetNamespace())
 		}
 		return err
 	}
