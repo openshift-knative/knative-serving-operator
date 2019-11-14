@@ -134,9 +134,6 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	instance := &servingv1alpha1.KnativeServing{}
 	if err := r.client.Get(context.TODO(), request.NamespacedName, instance); err != nil {
 		if apierrors.IsNotFound(err) {
-			if isInteresting(request) {
-				r.config.DeleteAll()
-			}
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, err
@@ -242,6 +239,10 @@ func (r *ReconcileKnativeServing) delete(instance *servingv1alpha1.KnativeServin
 	if err := r.extensions.Finalize(instance); err != nil {
 		return err
 	}
+	if err := r.config.DeleteAll(); err != nil {
+		return err
+	}
+
 	instance.SetFinalizers(instance.GetFinalizers()[1:])
 	return r.client.Update(context.TODO(), instance)
 }
