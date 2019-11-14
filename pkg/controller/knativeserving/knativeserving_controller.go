@@ -134,9 +134,6 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	instance := &servingv1alpha1.KnativeServing{}
 	if err := r.client.Get(context.TODO(), request.NamespacedName, instance); err != nil {
 		if apierrors.IsNotFound(err) {
-			if isInteresting(request) {
-				r.config.DeleteAll()
-			}
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, err
@@ -146,7 +143,12 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, r.ignore(instance)
 	}
 
+	if instance.GetDeletionTimestamp() != nil {
+		return reconcile.Result{}, r.delete(instance)
+	}
+
 	stages := []func(*servingv1alpha1.KnativeServing) error{
+		r.ensureFinalizers,
 		r.initStatus,
 		r.install,
 		r.checkDeployments,
@@ -189,6 +191,17 @@ func (r *ReconcileKnativeServing) updateStatus(instance *servingv1alpha1.Knative
 	return nil
 }
 
+func (r *ReconcileKnativeServing) ensureFinalizers(instance *servingv1alpha1.KnativeServing) error {
+	for _, finalizer := range instance.GetFinalizers() {
+		if finalizer == operand {
+			return nil
+		}
+	}
+
+	instance.SetFinalizers(append(instance.GetFinalizers(), operand))
+	return r.client.Update(context.TODO(), instance)
+}
+
 // Apply the embedded resources
 func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServing) error {
 	defer r.updateStatus(instance)
@@ -217,6 +230,21 @@ func (r *ReconcileKnativeServing) install(instance *servingv1alpha1.KnativeServi
 	log.Info("Install succeeded", "version", version.Version)
 	instance.Status.MarkInstallSucceeded()
 	return nil
+}
+
+func (r *ReconcileKnativeServing) delete(instance *servingv1alpha1.KnativeServing) error {
+	if len(instance.GetFinalizers()) == 0 || instance.GetFinalizers()[0] != operand {
+		return nil
+	}
+	if err := r.extensions.Finalize(instance); err != nil {
+		return err
+	}
+	if err := r.config.DeleteAll(); err != nil {
+		return err
+	}
+
+	instance.SetFinalizers(instance.GetFinalizers()[1:])
+	return r.client.Update(context.TODO(), instance)
 }
 
 // Expose metrics for installed knative serving operator

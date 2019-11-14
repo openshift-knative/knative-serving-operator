@@ -21,6 +21,7 @@ type Extension struct {
 	PreInstalls  []Extender
 	PostInstalls []Extender
 	Watchers     []Watcher
+	Finalizers   []Extender
 }
 
 func (platforms Platforms) Extend(c client.Client, scheme *runtime.Scheme, manifest *mf.Manifest) (result Extensions, err error) {
@@ -75,6 +76,17 @@ func (exts Extensions) PreInstall(instance *servingv1alpha1.KnativeServing) erro
 func (exts Extensions) PostInstall(instance *servingv1alpha1.KnativeServing) error {
 	for _, extension := range exts {
 		for _, f := range extension.PostInstalls {
+			if err := f(instance); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (exts Extensions) Finalize(instance *servingv1alpha1.KnativeServing) error {
+	for _, extension := range exts {
+		for _, f := range extension.Finalizers {
 			if err := f(instance); err != nil {
 				return err
 			}

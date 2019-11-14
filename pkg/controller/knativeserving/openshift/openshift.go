@@ -67,6 +67,7 @@ var (
 		PreInstalls:  []common.Extender{checkVersion, applyServiceMesh, installNetworkPolicies, caBundleConfigMap},
 		PostInstalls: []common.Extender{installServiceMonitor},
 		Watchers:     []common.Watcher{watchServiceMeshControlPlane, watchServiceMeshMemberRoll, clusterLoggingWatcher},
+		Finalizers:   []common.Extender{removeServiceMesh},
 	}
 	log    = logf.Log.WithName("openshift")
 	api    client.Client
@@ -183,11 +184,6 @@ func createIngressNamespace(servingNamespace string) error {
 	if err := api.Get(context.TODO(), client.ObjectKey{Name: ingressNamespace(servingNamespace)}, ns); err != nil {
 		if apierrors.IsNotFound(err) {
 			ns.Name = ingressNamespace(servingNamespace)
-			nsObject, err := getNamespaceObject(servingNamespace)
-			if err != nil {
-				return err
-			}
-			ns.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(nsObject, nsObject.GroupVersionKind())})
 			if err = api.Create(context.TODO(), ns); err != nil {
 				return err
 			}
@@ -237,6 +233,18 @@ func applyServiceMesh(instance *servingv1alpha1.KnativeServing) error {
 	return nil
 }
 
+func removeServiceMesh(instance *servingv1alpha1.KnativeServing) error {
+	log.Info("Removing service mesh")
+	ns, err := getNamespaceObject(ingressNamespace(instance.GetNamespace()))
+	if apierrors.IsNotFound(err) {
+		// We can safely ignore this. There is nothing to do for us.
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return api.Delete(context.TODO(), ns)
+}
+
 func breakReconcilation(err error) error {
 	return &common.NotYetReadyError{
 		Err: err,
@@ -280,7 +288,6 @@ func installServiceMeshControlPlane(instance *servingv1alpha1.KnativeServing) er
 		return err
 	}
 	transforms := []mf.Transformer{
-		mf.InjectOwner(instance),
 		mf.InjectNamespace(ingressNamespace(instance.GetNamespace())),
 		injectLabels(map[string]string{
 			ownerName:      instance.Name,
