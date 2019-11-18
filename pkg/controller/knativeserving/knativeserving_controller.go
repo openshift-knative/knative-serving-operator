@@ -17,6 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -243,8 +244,13 @@ func (r *ReconcileKnativeServing) delete(instance *servingv1alpha1.KnativeServin
 		return err
 	}
 
-	instance.SetFinalizers(instance.GetFinalizers()[1:])
-	return r.client.Update(context.TODO(), instance)
+	// The deletionTimestamp might've changed. Fetch the resource again.
+	refetched := &servingv1alpha1.KnativeServing{}
+	if err := r.client.Get(context.TODO(), types.NamespacedName{Namespace: instance.Namespace, Name: instance.Name}, refetched); err != nil {
+		return err
+	}
+	refetched.SetFinalizers(refetched.GetFinalizers()[1:])
+	return r.client.Update(context.TODO(), refetched)
 }
 
 // Expose metrics for installed knative serving operator
