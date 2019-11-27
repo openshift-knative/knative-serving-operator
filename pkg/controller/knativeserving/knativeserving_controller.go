@@ -12,6 +12,7 @@ import (
 	"github.com/openshift-knative/knative-serving-operator/version"
 	"github.com/operator-framework/operator-sdk/pkg/predicate"
 	"github.com/prometheus/client_golang/prometheus"
+	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +31,7 @@ import (
 
 const (
 	operand = "knative-serving"
+	path    = "deploy/resources/webhook/webhook.yaml"
 )
 
 var (
@@ -151,6 +153,7 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	stages := []func(*servingv1alpha1.KnativeServing) error{
 		r.ensureFinalizers,
 		r.initStatus,
+		r.checkWebhooks,
 		r.install,
 		r.checkDeployments,
 		r.deleteObsoleteResources,
@@ -176,6 +179,47 @@ func (r *ReconcileKnativeServing) initStatus(instance *servingv1alpha1.KnativeSe
 		}
 	}
 	return nil
+}
+
+// added changes in order to support release 0.10 please refer issue https://github.com/knative/serving-operator/issues/226
+func (r *ReconcileKnativeServing) checkWebhooks(instance *servingv1alpha1.KnativeServing) error {
+	if err := mutateWebhook(r.client); err != nil {
+		return err
+	}
+	return validateWebhook(r.client)
+}
+
+func mutateWebhook(cl client.Client) error {
+	mutatingWebhook := &admissionregistrationv1beta1.MutatingWebhookConfiguration{}
+	err := cl.Get(context.TODO(), types.NamespacedName{Name: "webhook.serving.knative.dev"}, mutatingWebhook)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return apply(path, cl)
+		}
+		return err
+	}
+	return nil
+}
+
+func validateWebhook(cl client.Client) error {
+	validateWebhook := &admissionregistrationv1beta1.ValidatingWebhookConfiguration{}
+	err := cl.Get(context.TODO(), types.NamespacedName{Name: "config.webhook.serving.knative.dev"}, validateWebhook)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return apply(path, cl)
+		}
+		return err
+	}
+	return nil
+}
+
+func apply(path string, cl client.Client) error {
+	manifest, err := mf.NewManifest(path, false, cl)
+	if err != nil {
+		log.Error(err, "unable to create mutating webhook")
+		return err
+	}
+	return manifest.ApplyAll()
 }
 
 // Update the status subresource
@@ -243,7 +287,14 @@ func (r *ReconcileKnativeServing) delete(instance *servingv1alpha1.KnativeServin
 	if err := r.config.DeleteAll(); err != nil {
 		return err
 	}
-
+	// delete separately MutatingWebhookConfiguration and ValidatingWebhookConfiguration because those are not created as part of release yaml
+	manifest, err := mf.NewManifest(path, false, r.client)
+	if err != nil {
+		return err
+	}
+	if err := manifest.DeleteAll(); err != nil {
+		return err
+	}
 	// The deletionTimestamp might've changed. Fetch the resource again.
 	refetched := &servingv1alpha1.KnativeServing{}
 	if err := r.client.Get(context.TODO(), types.NamespacedName{Namespace: instance.Namespace, Name: instance.Name}, refetched); err != nil {
