@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	operand = "knative-serving"
-	path    = "deploy/resources/webhook/webhook.yaml"
+	operand     = "knative-serving"
+	webhookPath = "deploy/resources/webhook/webhook.yaml"
 )
 
 var (
@@ -194,7 +194,7 @@ func mutateWebhook(cl client.Client) error {
 	err := cl.Get(context.TODO(), types.NamespacedName{Name: "webhook.serving.knative.dev"}, mutatingWebhook)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return apply(path, cl)
+			return apply(cl)
 		}
 		return err
 	}
@@ -206,15 +206,15 @@ func validateWebhook(cl client.Client) error {
 	err := cl.Get(context.TODO(), types.NamespacedName{Name: "config.webhook.serving.knative.dev"}, validateWebhook)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return apply(path, cl)
+			return apply(cl)
 		}
 		return err
 	}
 	return nil
 }
 
-func apply(path string, cl client.Client) error {
-	manifest, err := mf.NewManifest(path, false, cl)
+func apply(cl client.Client) error {
+	manifest, err := mf.NewManifest(webhookPath, false, cl)
 	if err != nil {
 		log.Error(err, "unable to create mutating webhook")
 		return err
@@ -288,7 +288,7 @@ func (r *ReconcileKnativeServing) delete(instance *servingv1alpha1.KnativeServin
 		return err
 	}
 	// delete separately MutatingWebhookConfiguration and ValidatingWebhookConfiguration because those are not created as part of release yaml
-	manifest, err := mf.NewManifest(path, false, r.client)
+	manifest, err := mf.NewManifest(webhookPath, false, r.client)
 	if err != nil {
 		return err
 	}
